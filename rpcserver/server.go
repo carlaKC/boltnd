@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 
 	"github.com/carlakc/boltnd/offersrpc"
-
 	"github.com/lightninglabs/lndclient"
 )
 
@@ -42,6 +41,8 @@ func (s *Server) Start() error {
 		return errors.New("server already started")
 	}
 
+	log.Info("Starting rpc server")
+
 	// Setup our lnd grpc client.
 	var err error
 	s.lnd, err = lndclient.NewLndServices(s.cfg)
@@ -57,6 +58,9 @@ func (s *Server) Stop() error {
 	if !atomic.CompareAndSwapInt32(&s.stopped, 0, 1) {
 		return fmt.Errorf("server already stopped")
 	}
+
+	log.Info("Stopping rpc server")
+	defer log.Info("Stopped rpc server")
 
 	// Shut down our lnd grpc client.
 	s.lnd.Close()
