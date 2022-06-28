@@ -98,9 +98,9 @@ func lndClientCfg(cfg *lnd.Config) (*lndclient.LndServicesConfig, error) {
 
 	// Setup a config to connect to lnd from the top level config passed in.
 	lndCfg := &lndclient.LndServicesConfig{
-		LndAddress:  cfg.RPCListeners[0].String(),
-		MacaroonDir: cfg.AdminMacPath,
-		TLSPath:     cfg.TLSCertPath,
+		LndAddress:         cfg.RPCListeners[0].String(),
+		CustomMacaroonPath: cfg.AdminMacPath,
+		TLSPath:            cfg.TLSCertPath,
 		CheckVersion: &verrpc.Version{
 			AppMajor: 0,
 			AppMinor: 15,
