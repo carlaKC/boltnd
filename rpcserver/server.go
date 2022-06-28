@@ -62,8 +62,10 @@ func (s *Server) Stop() error {
 	log.Info("Stopping rpc server")
 	defer log.Info("Stopped rpc server")
 
-	// Shut down our lnd grpc client.
-	s.lnd.Close()
+	// Shut down our lnd grpc client if it is present.
+	if s.lnd != nil {
+		s.lnd.Close()
+	}
 
 	return nil
 }
