@@ -4,7 +4,10 @@ go 1.17
 
 require (
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
+	github.com/lightninglabs/lndclient v0.15.0-10
 	github.com/lightningnetwork/lnd v0.15.0-beta
+	google.golang.org/grpc v1.38.0
+	google.golang.org/protobuf v1.26.0
 )
 
 require (
@@ -43,7 +46,6 @@ require (
 	github.com/fergusstrange/embedded-postgres v1.10.0 // indirect
 	github.com/form3tech-oss/jwt-go v3.2.3+incompatible // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
-	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -67,18 +69,11 @@ require (
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/jrick/logrotate v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
-	github.com/juju/clock v0.0.0-20220203021603-d9deb868a28a // indirect
-	github.com/juju/collections v0.0.0-20220203020748-febd7cad8a7a // indirect
 	github.com/juju/errors v0.0.0-20220622220526-54a94488269b // indirect
 	github.com/juju/loggo v0.0.0-20210728185423-eebad3a902c4 // indirect
-	github.com/juju/mgo/v2 v2.0.0-20220111072304-f200228f1090 // indirect
-	github.com/juju/retry v0.0.0-20220204093819-62423bf33287 // indirect
-	github.com/juju/utils/v3 v3.0.0-20220203023959-c3fbc78a33b0 // indirect
-	github.com/juju/version/v2 v2.0.0-20220204124744-fc9915e3d935 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
-	github.com/kr/pretty v0.2.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.14.2 // indirect
@@ -113,6 +108,7 @@ require (
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02 // indirect
 	github.com/ulikunitz/xz v0.5.10 // indirect
+	github.com/xdg-go/stringprep v1.0.2 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
@@ -145,11 +141,9 @@ require (
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	google.golang.org/genproto v0.0.0-20210617175327-b9e0b3197ced // indirect
-	google.golang.org/grpc v1.38.0 // indirect
-	google.golang.org/protobuf v1.26.0 // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/macaroon-bakery.v2 v2.0.1 // indirect
-	gopkg.in/macaroon.v2 v2.0.0 // indirect
+	gopkg.in/macaroon.v2 v2.1.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
