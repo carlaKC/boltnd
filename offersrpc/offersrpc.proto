@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package offersrpc;
+
+option go_package = "github.com/carlaKC/boltnd/offersrpc";
+
+service Offers {}

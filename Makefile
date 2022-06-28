@@ -1,0 +1,18 @@
+# The functionality in this makefile is largely copied from lnd/Makefile, 
+# credit to LL devs.
+
+GREEN := "\\033[0;32m"
+NC := "\\033[0m"
+define print
+	echo $(GREEN)$1$(NC)
+endef
+
+# =========
+# UTILITIES
+# =========
+
+rpc:
+	@$(call print, "Compiling protos.")
+	cd ./offersrpc; ./gen_protos_docker.sh
+
+
