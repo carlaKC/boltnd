@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"carlaKC/boltnd/offersrpc"
-	"carlaKC/boltnd/rpcserver"
-
+	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/carlakc/boltnd/rpcserver"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"

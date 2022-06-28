@@ -1,10 +1,11 @@
 package rpcserver
 
 import (
-	"carlaKC/boltnd/offersrpc"
 	"errors"
 	"fmt"
 	"sync/atomic"
+
+	"github.com/carlakc/boltnd/offersrpc"
 
 	"github.com/lightninglabs/lndclient"
 )

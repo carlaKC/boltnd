@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package offersrpc;
 
-option go_package = "github.com/carlaKC/boltnd/offersrpc";
+option go_package = "github.com/carlakc/boltnd/offersrpc";
 
-service Offers {}
+service Offers {
+}
