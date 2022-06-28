@@ -9,6 +9,7 @@ import (
 	"github.com/carlakc/boltnd/rpcserver"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
@@ -29,7 +30,7 @@ func NewBolt12Ext(cfg *lnd.Config,
 	interceptor signal.Interceptor) (*Bolt12Ext, error) {
 
 	// Register our logger as a sublogger in lnd.
-	lnd.AddSubLogger(cfg.LogWriter, Subsystem, interceptor, UseLogger)
+	setupLoggers(cfg.LogWriter, interceptor)
 
 	lndClientCfg, err := lndClientCfg(cfg)
 	if err != nil {
@@ -52,6 +53,8 @@ func (b *Bolt12Ext) Start() error {
 		return errors.New("impl already started")
 	}
 
+	log.Info("Starting Bolt 12 implementation")
+
 	if err := b.rpcServer.Start(); err != nil {
 		return err
 	}
@@ -64,6 +67,8 @@ func (b *Bolt12Ext) Stop() error {
 	if !atomic.CompareAndSwapInt32(&b.stopped, 0, 1) {
 		return fmt.Errorf("impl already stopped")
 	}
+
+	log.Info("Stopping Bolt 12 implementation")
 
 	if err := b.rpcServer.Stop(); err != nil {
 		return err
@@ -79,6 +84,8 @@ func (b *Bolt12Ext) Stop() error {
 //
 // NOTE: This is part of the lnd.GrpcRegistrar interface.
 func (b *Bolt12Ext) RegisterGrpcSubserver(server *grpc.Server) error {
+	log.Info("Registered bolt 12 subserver")
+
 	offersrpc.RegisterOffersServer(server, b.rpcServer)
 	return nil
 }
@@ -91,9 +98,9 @@ func lndClientCfg(cfg *lnd.Config) (*lndclient.LndServicesConfig, error) {
 
 	// Setup a config to connect to lnd from the top level config passed in.
 	lndCfg := &lndclient.LndServicesConfig{
-		LndAddress:  cfg.RPCListeners[0].String(),
-		MacaroonDir: cfg.AdminMacPath,
-		TLSPath:     cfg.TLSCertPath,
+		LndAddress:         cfg.RPCListeners[0].String(),
+		CustomMacaroonPath: cfg.AdminMacPath,
+		TLSPath:            cfg.TLSCertPath,
 		CheckVersion: &verrpc.Version{
 			AppMajor: 0,
 			AppMinor: 15,
@@ -123,4 +130,15 @@ func lndClientCfg(cfg *lnd.Config) (*lndclient.LndServicesConfig, error) {
 	}
 
 	return lndCfg, nil
+}
+
+// setupLoggers registers all of our loggers as subloggers with lnd.
+func setupLoggers(root *build.RotatingLogWriter,
+	interceptor signal.Interceptor) {
+
+	lnd.AddSubLogger(root, Subsystem, interceptor, UseLogger)
+	lnd.AddSubLogger(
+		root, rpcserver.Subsystem, interceptor,
+		rpcserver.UseLogger,
+	)
 }

@@ -1,9 +1,9 @@
-package boltnd
+package rpcserver
 
 import "github.com/btcsuite/btclog"
 
 // Subsystem defines the logging code for this subsystem.
-const Subsystem = "B12-OFRS"
+const Subsystem = "B12-RPCS"
 
 // log is a logger that is initialized with no output filters.  This
 // means the package will not perform any logging by default until the caller
