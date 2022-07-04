@@ -41,7 +41,7 @@ func NewBoltnd(opts ...ConfigOption) (*Boltnd, error) {
 
 	rpcserver, err := rpcserver.NewServer(cfg.LndClientCfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create rpcserver: %v", err)
 	}
 
 	return &Boltnd{
@@ -59,7 +59,7 @@ func (b *Boltnd) Start() error {
 	log.Info("Starting Boltnd")
 
 	if err := b.rpcServer.Start(); err != nil {
-		return err
+		return fmt.Errorf("error starting rpcserver: %v", err)
 	}
 
 	return nil
@@ -74,7 +74,7 @@ func (b *Boltnd) Stop() error {
 	log.Info("Stopping Boltnd")
 
 	if err := b.rpcServer.Stop(); err != nil {
-		return err
+		return fmt.Errorf("could not stop rpcserver: %v", err)
 	}
 
 	return nil
