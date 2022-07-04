@@ -185,6 +185,8 @@ github.com/dustin/go-humanize v1.0.0 h1:VSnTsYCnlFHaM2/igO1h6X3HA71jcobQuxemgkq4
 github.com/dustin/go-humanize v1.0.0/go.mod h1:HtrtbFcZ19U5GC7JDqmcUSB87Iq5E25KnS6fMYU6eOk=
 github.com/dvyukov/go-fuzz v0.0.0-20210602112143-b1f3d6f4ef4e h1:qTP1telKJHlToHlwPQNmVg4yfMDMHe4Z3SYmzkrvA2M=
 github.com/dvyukov/go-fuzz v0.0.0-20210602112143-b1f3d6f4ef4e/go.mod h1:11Gm+ccJnvAhCNLlf5+cS9KjtbaD5I5zaZpFMsTHWTw=
+github.com/ellemouton/lightning-onion v1.2.1-0.20220705120237-ee90b334667d h1:YmBKcAs+xTFBcc1zrBt5fVids86nUgHmn6zy4z9EjuE=
+github.com/ellemouton/lightning-onion v1.2.1-0.20220705120237-ee90b334667d/go.mod h1:IpXmxKG482HAQC/aCn0Sd+DYmKlkfaNF/iUz298HhC0=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
@@ -511,9 +513,6 @@ github.com/lightninglabs/neutrino v0.14.1/go.mod h1:SV9ccrw2m6t6UvJX8xB//W0Dv+LE
 github.com/lightninglabs/neutrino v0.14.2 h1:yrnZUCYMZ5ECtXhgDrzqPq2oX8awoAN2D/cgCewJcCo=
 github.com/lightninglabs/neutrino v0.14.2/go.mod h1:OICUeTCn+4Tu27YRJIpWvvqySxx4oH4vgdP33Sw9RDc=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display/go.mod h1:2oKOBU042GKFHrdbgGiKax4xVrFiZu51lhacUZQ9MnE=
-github.com/lightningnetwork/lightning-onion v1.0.2-0.20220211021909-bb84a1ccb0c5/go.mod h1:7dDx73ApjEZA0kcknI799m2O5kkpfg4/gr7N092ojNo=
-github.com/lightningnetwork/lightning-onion v1.2.0 h1:nq7OxNMnhmOKKQefvgwDlZGT4rBMqxukM1kaH6JBOw4=
-github.com/lightningnetwork/lightning-onion v1.2.0/go.mod h1:7dDx73ApjEZA0kcknI799m2O5kkpfg4/gr7N092ojNo=
 github.com/lightningnetwork/lnd v0.15.0-beta.rc1 h1:ftypj6H6cNTaJtV5VkrRjMQ18kurrll2UFvIx5PvZKU=
 github.com/lightningnetwork/lnd v0.15.0-beta.rc1/go.mod h1:NzCE1ZGct0YEW9u74TXUpXp5AoUXzpkI5lgrO7x0ugM=
 github.com/lightningnetwork/lnd/cert v1.1.1 h1:Nsav0RlIDRbOnzz2Yu69SQlK939IKya3Q2S0mDviIN8=
@@ -703,6 +702,7 @@ github.com/ulikunitz/xz v0.5.7/go.mod h1:nbz6k7qbPmH4IRqmfOplQw/tblSgqTqBwxkY0oW
 github.com/ulikunitz/xz v0.5.10 h1:t92gobL9l3HE202wg3rlk19F6X+JOxl9BBrCCMYEYd8=
 github.com/ulikunitz/xz v0.5.10/go.mod h1:nbz6k7qbPmH4IRqmfOplQw/tblSgqTqBwxkY0oWt/14=
 github.com/urfave/cli v1.22.4/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
+github.com/urfave/cli v1.22.5/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/xdg-go/stringprep v1.0.2 h1:6iq84/ryjjeRmMJwxutI51F2GIPlP5BfTvXHeYjyhBc=
 github.com/xdg-go/stringprep v1.0.2/go.mod h1:8F9zXuvzgwmyT5DUm4GUfZGDdT3W+LCvS6+da4O5kxM=
 github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 h1:nIPpBwaJSVYIxUFsDv3M8ofmx9yWTog9BfvIu0q41lo=

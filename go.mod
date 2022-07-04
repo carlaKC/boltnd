@@ -159,3 +159,5 @@ require (
 )
 
 replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20220708084624-1e349166f2e8
+
+replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lightning-onion v1.2.1-0.20220705120237-ee90b334667d
