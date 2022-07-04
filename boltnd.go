@@ -39,7 +39,7 @@ func NewBoltnd(opts ...ConfigOption) (*Boltnd, error) {
 
 	setupLoggers(cfg)
 
-	rpcserver, err := rpcserver.NewServer(cfg.LndClientCfg)
+	rpcserver, err := rpcserver.NewServer()
 	if err != nil {
 		return nil, fmt.Errorf("could not create rpcserver: %v", err)
 	}

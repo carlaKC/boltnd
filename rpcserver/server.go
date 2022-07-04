@@ -17,8 +17,6 @@ type Server struct {
 	started int32 // to be used atomically
 	stopped int32 // to be used atomically
 
-	cfg *lndclient.LndServicesConfig
-
 	// lnd provides a connection to lnd's other grpc servers. Since we need
 	// to connect to the grpc servers, this can't be done while we're busy
 	// setting up ourselves as a sub-server. Consequently, this value will
@@ -29,10 +27,8 @@ type Server struct {
 }
 
 // NewServer creates an offers server.
-func NewServer(cfg *lndclient.LndServicesConfig) (*Server, error) {
-	return &Server{
-		cfg: cfg,
-	}, nil
+func NewServer() (*Server, error) {
+	return &Server{}, nil
 }
 
 // Start starts the offers server.
@@ -42,13 +38,6 @@ func (s *Server) Start() error {
 	}
 
 	log.Info("Starting rpc server")
-
-	// Setup our lnd grpc client.
-	var err error
-	s.lnd, err = lndclient.NewLndServices(s.cfg)
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
@@ -61,11 +50,6 @@ func (s *Server) Stop() error {
 
 	log.Info("Stopping rpc server")
 	defer log.Info("Stopped rpc server")
-
-	// Shut down our lnd grpc client if it is present.
-	if s.lnd != nil {
-		s.lnd.Close()
-	}
 
 	return nil
 }
