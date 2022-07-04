@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/rpcserver"
@@ -55,9 +56,13 @@ func (b *Boltnd) Start() error {
 
 	log.Info("Starting Boltnd")
 
-	if err := b.rpcServer.Start(); err != nil {
-		return err
-	}
+	go func() {
+		log.Infof("Sleeping 5 seconds for LND to start up")
+		time.Sleep(time.Second * 5)
+		if err := b.rpcServer.Start(); err != nil {
+			log.Errorf("Could not start rpcserver: %v", err)
+		}
+	}()
 
 	return nil
 }
