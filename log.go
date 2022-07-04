@@ -2,6 +2,9 @@ package boltnd
 
 import "github.com/btcsuite/btclog"
 
+// LogRegistration is the function signature used to register loggers.
+type LogRegistration func(logger btclog.Logger)
+
 // Subsystem defines the logging code for this subsystem.
 const Subsystem = "B12-OFRS"
 

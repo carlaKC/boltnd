@@ -7,11 +7,6 @@ import (
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/rpcserver"
-	"github.com/lightninglabs/lndclient"
-	"github.com/lightningnetwork/lnd"
-	"github.com/lightningnetwork/lnd/build"
-	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
-	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
 )
 
@@ -26,18 +21,23 @@ type Boltnd struct {
 // NewBoltnd returns a new external boltnd implementation. Note that the
 // lnd config provided must be fully initialized so that we can setup our
 // logging.
-func NewBoltnd(cfg *lnd.Config,
-	interceptor signal.Interceptor) (*Boltnd, error) {
+func NewBoltnd(opts ...ConfigOption) (*Boltnd, error) {
+	// Start with an empty config and apply our functional options.
+	cfg := &Config{}
 
-	// Register our logger as a sublogger in lnd.
-	setupLoggers(cfg.LogWriter, interceptor)
-
-	lndClientCfg, err := lndClientCfg(cfg)
-	if err != nil {
-		return nil, err
+	for _, opt := range opts {
+		if err := opt(cfg); err != nil {
+			return nil, fmt.Errorf("config option failed: %v", err)
+		}
 	}
 
-	rpcserver, err := rpcserver.NewServer(lndClientCfg)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %v", err)
+	}
+
+	setupLoggers(cfg)
+
+	rpcserver, err := rpcserver.NewServer(cfg.LndClientCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -90,55 +90,14 @@ func (b *Boltnd) RegisterGrpcSubserver(server *grpc.Server) error {
 	return nil
 }
 
-// lndClientCfg extracts a lndclient config from the top level lnd config.
-func lndClientCfg(cfg *lnd.Config) (*lndclient.LndServicesConfig, error) {
-	if len(cfg.RPCListeners) < 1 {
-		return nil, errors.New("at least one rpc listener required")
+// setupLoggers registers all of our loggers if a config option to setup loggers
+// was provided.
+func setupLoggers(cfg *Config) {
+	// If a setup function is not provided, do nothing.
+	if cfg.SetupLogger == nil {
+		return
 	}
 
-	// Setup a config to connect to lnd from the top level config passed in.
-	lndCfg := &lndclient.LndServicesConfig{
-		LndAddress:         cfg.RPCListeners[0].String(),
-		CustomMacaroonPath: cfg.AdminMacPath,
-		TLSPath:            cfg.TLSCertPath,
-		CheckVersion: &verrpc.Version{
-			AppMajor: 0,
-			AppMinor: 15,
-			AppPatch: 0,
-			BuildTags: []string{
-				"signrpc", "walletrpc", "chainrpc",
-				"invoicesrpc", "bolt12",
-			},
-		},
-		BlockUntilChainSynced: true,
-		BlockUntilUnlocked:    true,
-	}
-
-	switch {
-	case cfg.Bitcoin.MainNet:
-		lndCfg.Network = lndclient.NetworkMainnet
-
-	case cfg.Bitcoin.TestNet3:
-		lndCfg.Network = lndclient.NetworkTestnet
-
-	case cfg.Bitcoin.RegTest:
-		lndCfg.Network = lndclient.NetworkRegtest
-
-	default:
-		return nil, fmt.Errorf("only bitcoin mainnet /testnet / " +
-			"regtest supported")
-	}
-
-	return lndCfg, nil
-}
-
-// setupLoggers registers all of our loggers as subloggers with lnd.
-func setupLoggers(root *build.RotatingLogWriter,
-	interceptor signal.Interceptor) {
-
-	lnd.AddSubLogger(root, Subsystem, interceptor, UseLogger)
-	lnd.AddSubLogger(
-		root, rpcserver.Subsystem, interceptor,
-		rpcserver.UseLogger,
-	)
+	cfg.SetupLogger(Subsystem, UseLogger)
+	cfg.SetupLogger(rpcserver.Subsystem, rpcserver.UseLogger)
 }
