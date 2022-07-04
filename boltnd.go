@@ -16,6 +16,8 @@ type Boltnd struct {
 	stopped int32 // to be used atomically
 
 	rpcServer *rpcserver.Server
+
+	cfg *Config
 }
 
 // NewBoltnd returns a new external boltnd implementation. Note that the
@@ -44,6 +46,7 @@ func NewBoltnd(opts ...ConfigOption) (*Boltnd, error) {
 
 	return &Boltnd{
 		rpcServer: rpcserver,
+		cfg:       cfg,
 	}, nil
 }
 
@@ -75,6 +78,17 @@ func (b *Boltnd) Stop() error {
 	}
 
 	return nil
+}
+
+// requestShutdown calls our graceful shutdown closure, if supplied.
+func (b *Boltnd) requestShutdown() {
+	if b.cfg.RequestShutdown == nil {
+		log.Info("No graceful shutdown closure provided")
+		return
+	}
+
+	log.Info("Requesting graceful shutdown")
+	b.cfg.RequestShutdown()
 }
 
 // RegisterGrpcSubserver is a callback on the lnd.SubserverConfig struct that is

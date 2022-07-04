@@ -28,6 +28,10 @@ type Config struct {
 
 	// SetupLogger is used to register our loggers with a top level logger.
 	SetupLogger func(prefix string, register LogRegistration)
+
+	// RequestShutdown is an optional closure to request clean shutdown
+	// from the calling entity if the boltnd instance errors out.
+	RequestShutdown func()
 }
 
 // Validate ensures that we have all the required config values set.
@@ -119,6 +123,15 @@ func OptionLNDLogger(root *build.RotatingLogWriter,
 func OptionSetupLogger(setup func(string, LogRegistration)) ConfigOption {
 	return func(c *Config) error {
 		c.SetupLogger = setup
+		return nil
+	}
+}
+
+// OptionRequestShutdown provides a closure that will gracefully shutdown the
+// calling code if boltnd exits with an error.
+func OptionRequestShutdown(s func()) ConfigOption {
+	return func(c *Config) error {
+		c.RequestShutdown = s
 		return nil
 	}
 }
