@@ -94,6 +94,14 @@ func OptionLNDConfig(cfg *lnd.Config) ConfigOption {
 	}
 }
 
+// OptionLNDClient sets the lnd client config in our top level config.
+func OptionLNDClient(lndClientCfg *lndclient.LndServicesConfig) ConfigOption {
+	return func(c *Config) error {
+		c.LndClientCfg = lndClientCfg
+		return nil
+	}
+}
+
 // OptionLNDLogger uses lnd's root logger and interceptor to register our logs.
 func OptionLNDLogger(root *build.RotatingLogWriter,
 	interceptor signal.Interceptor) ConfigOption {
@@ -103,6 +111,14 @@ func OptionLNDLogger(root *build.RotatingLogWriter,
 			lnd.AddSubLogger(root, prefix, interceptor, r)
 		}
 
+		return nil
+	}
+}
+
+// OptionSetupLogger sets the setup logger function in our config.
+func OptionSetupLogger(setup func(string, LogRegistration)) ConfigOption {
+	return func(c *Config) error {
+		c.SetupLogger = setup
 		return nil
 	}
 }
