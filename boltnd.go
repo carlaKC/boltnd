@@ -15,19 +15,19 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Bolt12Ext holds a bolt 12 implementation that is external to lnd.
-type Bolt12Ext struct {
+// Boltnd holds opt-in bolt features that are externally implemented for lnd.
+type Boltnd struct {
 	started int32 // to be used atomically
 	stopped int32 // to be used atomically
 
 	rpcServer *rpcserver.Server
 }
 
-// NewBolt12Ext returns a new external bolt 12 implementation. Note that the
+// NewBoltnd returns a new external boltnd implementation. Note that the
 // lnd config provided must be fully initialized so that we can setup our
 // logging.
-func NewBolt12Ext(cfg *lnd.Config,
-	interceptor signal.Interceptor) (*Bolt12Ext, error) {
+func NewBoltnd(cfg *lnd.Config,
+	interceptor signal.Interceptor) (*Boltnd, error) {
 
 	// Register our logger as a sublogger in lnd.
 	setupLoggers(cfg.LogWriter, interceptor)
@@ -42,18 +42,18 @@ func NewBolt12Ext(cfg *lnd.Config,
 		return nil, err
 	}
 
-	return &Bolt12Ext{
+	return &Boltnd{
 		rpcServer: rpcserver,
 	}, nil
 }
 
-// Start starts the bolt 12 implementation.
-func (b *Bolt12Ext) Start() error {
+// Start starts the boltnd implementation.
+func (b *Boltnd) Start() error {
 	if !atomic.CompareAndSwapInt32(&b.started, 0, 1) {
-		return errors.New("impl already started")
+		return errors.New("boltnd already started")
 	}
 
-	log.Info("Starting Bolt 12 implementation")
+	log.Info("Starting Boltnd")
 
 	if err := b.rpcServer.Start(); err != nil {
 		return err
@@ -62,13 +62,13 @@ func (b *Bolt12Ext) Start() error {
 	return nil
 }
 
-// Stop shuts down the bolt 12 implementation.
-func (b *Bolt12Ext) Stop() error {
+// Stop shuts down the boltnd implementation.
+func (b *Boltnd) Stop() error {
 	if !atomic.CompareAndSwapInt32(&b.stopped, 0, 1) {
-		return fmt.Errorf("impl already stopped")
+		return fmt.Errorf("boltnd already stopped")
 	}
 
-	log.Info("Stopping Bolt 12 implementation")
+	log.Info("Stopping Boltnd")
 
 	if err := b.rpcServer.Stop(); err != nil {
 		return err
@@ -83,7 +83,7 @@ func (b *Bolt12Ext) Stop() error {
 // the same server instance.
 //
 // NOTE: This is part of the lnd.GrpcRegistrar interface.
-func (b *Bolt12Ext) RegisterGrpcSubserver(server *grpc.Server) error {
+func (b *Boltnd) RegisterGrpcSubserver(server *grpc.Server) error {
 	log.Info("Registered bolt 12 subserver")
 
 	offersrpc.RegisterOffersServer(server, b.rpcServer)
