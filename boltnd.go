@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/rpcserver"
+	"github.com/lightninglabs/lndclient"
 	"google.golang.org/grpc"
 )
 
@@ -24,8 +26,8 @@ type Boltnd struct {
 // lnd config provided must be fully initialized so that we can setup our
 // logging.
 func NewBoltnd(opts ...ConfigOption) (*Boltnd, error) {
-	// Start with an empty config and apply our functional options.
-	cfg := &Config{}
+	// Start with our default configuration.
+	cfg := DefaultConfig()
 
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
@@ -57,6 +59,31 @@ func (b *Boltnd) Start() error {
 	}
 
 	log.Info("Starting Boltnd")
+
+	// We allow zero retires, so we iterate with retries + 1 to allow at
+	// least one connection attempt for lnd.
+	var connErr error
+	for i := 0; i < int(b.cfg.LNDRetires+1); i++ {
+		log.Infof("Attempt: %v to connect to lnd", i)
+
+		_, connErr = lndclient.NewLndServices(b.cfg.LndClientCfg)
+		if connErr != nil {
+			log.Errorf("error starting lndclient: %w (attempt: %v)",
+				connErr, i)
+
+			time.Sleep(b.cfg.LNDWait)
+			continue
+		}
+
+		log.Infof("Successfully connected to lnd on attempt: %v", i)
+		break
+
+	}
+
+	// If we exited the loop above with an error, fail startup.
+	if connErr != nil {
+		return fmt.Errorf("could not connect to lnd: %w", connErr)
+	}
 
 	if err := b.rpcServer.Start(); err != nil {
 		return fmt.Errorf("error starting rpcserver: %v", err)
