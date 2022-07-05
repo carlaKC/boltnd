@@ -17,6 +17,7 @@ type Boltnd struct {
 	started int32 // to be used atomically
 	stopped int32 // to be used atomically
 
+	lnd       *lndclient.GrpcLndServices
 	rpcServer *rpcserver.Server
 
 	cfg *Config
@@ -66,7 +67,7 @@ func (b *Boltnd) Start() error {
 	for i := 0; i < int(b.cfg.LNDRetires+1); i++ {
 		log.Infof("Attempt: %v to connect to lnd", i)
 
-		_, connErr = lndclient.NewLndServices(b.cfg.LndClientCfg)
+		b.lnd, connErr = lndclient.NewLndServices(b.cfg.LndClientCfg)
 		if connErr != nil {
 			log.Errorf("error starting lndclient: %w (attempt: %v)",
 				connErr, i)
@@ -85,7 +86,7 @@ func (b *Boltnd) Start() error {
 		return fmt.Errorf("could not connect to lnd: %w", connErr)
 	}
 
-	if err := b.rpcServer.Start(); err != nil {
+	if err := b.rpcServer.Start(&b.lnd.LndServices); err != nil {
 		return fmt.Errorf("error starting rpcserver: %v", err)
 	}
 
@@ -102,6 +103,10 @@ func (b *Boltnd) Stop() error {
 
 	if err := b.rpcServer.Stop(); err != nil {
 		return fmt.Errorf("could not stop rpcserver: %v", err)
+	}
+
+	if b.lnd != nil {
+		b.lnd.Close()
 	}
 
 	return nil
