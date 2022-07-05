@@ -1,9 +1,11 @@
 package onionmsg
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/carlakc/boltnd/lnwire"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 )
 
@@ -95,4 +97,70 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath) (*sphinx.PaymentPath,
 	}
 
 	return &sphinxPath, nil
+}
+
+// encodeBlindedData encodes a TLV stream for an intermediate hop in a
+// blinded route, including only a next_node_id TLV for onion messaging.
+func encodeBlindedData(nextHop *btcec.PublicKey) ([]byte, error) {
+	if nextHop == nil {
+		return nil, fmt.Errorf("expected non-nil next hop")
+	}
+
+	data := &lnwire.BlindedRouteData{
+		NextNodeID: nextHop,
+	}
+
+	bytes, err := lnwire.EncodeBlindedRouteData(data)
+	if err != nil {
+		return nil, fmt.Errorf("encode blinded: %w", err)
+	}
+
+	return bytes, nil
+}
+
+// createOnionMessage creates an onion message, blinding the nodes in the path
+// provided and including relevant TLVs for blinded relay of messages.
+func createOnionMessage(path []*btcec.PublicKey,
+	sessionKey *btcec.PrivateKey) (*lnwire.OnionMessage, error) {
+
+	hopCount := len(path)
+	if hopCount < 1 {
+		return nil, fmt.Errorf("blinded path must have at least 1 hop")
+	}
+
+	// Create a blinded path.
+	hops, err := createPathToBlind(path, encodeBlindedData)
+	if err != nil {
+		return nil, fmt.Errorf("path to blind: %w", err)
+	}
+
+	// Create a blinded route from our set of hops, encrypting blobs and
+	// blinding node keys as required.
+	blindedPath, err := sphinx.BuildBlindedPath(sessionKey, hops)
+	if err != nil {
+		return nil, fmt.Errorf("blinded path: %w", err)
+	}
+
+	sphinxPath, err := blindedToSphinx(blindedPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not create sphinx path: %w", err)
+	}
+
+	// Finally, we want to case this all up in an onion.
+	onionPacket, err := sphinx.NewOnionPacket(
+		// TODO: check whether we need associated data.
+		sphinxPath, sessionKey, nil, sphinx.DeterministicPacketFiller,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("new onion packed failed: %w", err)
+	}
+
+	buf := new(bytes.Buffer)
+	if err := onionPacket.Encode(buf); err != nil {
+		return nil, fmt.Errorf("onion packet encode: %w", err)
+	}
+
+	return lnwire.NewOnionMessage(
+		blindedPath.BlindingPoint, buf.Bytes(),
+	), nil
 }
