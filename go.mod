@@ -3,9 +3,12 @@ module github.com/carlakc/boltnd
 go 1.17
 
 require (
+	github.com/btcsuite/btcd/btcec/v2 v2.2.0
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/lightninglabs/lndclient v0.15.0-10
+	github.com/lightningnetwork/lightning-onion v1.2.0
 	github.com/lightningnetwork/lnd v0.15.0-beta.rc1
+	github.com/lightningnetwork/lnd/tlv v1.0.3
 	github.com/stretchr/testify v1.8.0
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.26.0
@@ -21,7 +24,6 @@ require (
 	github.com/andybalholm/brotli v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd v0.23.1 // indirect
-	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.1 // indirect
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.4 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1 // indirect
@@ -88,14 +90,12 @@ require (
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.14.2 // indirect
-	github.com/lightningnetwork/lightning-onion v1.2.0 // indirect
 	github.com/lightningnetwork/lnd/cert v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/clock v1.1.0 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.2 // indirect
 	github.com/lightningnetwork/lnd/kvdb v1.3.1 // indirect
 	github.com/lightningnetwork/lnd/queue v1.1.0 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.0 // indirect
-	github.com/lightningnetwork/lnd/tlv v1.0.3 // indirect
 	github.com/lightningnetwork/lnd/tor v1.0.1 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect

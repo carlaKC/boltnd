@@ -63,3 +63,36 @@ func createPathToBlind(path []*btcec.PublicKey,
 
 	return hopsToBlind, nil
 }
+
+// blindedToSphinx converts the blinded path provided to a sphinx path that can
+// be wrapped up in an onion.
+func blindedToSphinx(blindedRoute *sphinx.BlindedPath) (*sphinx.PaymentPath,
+	error) {
+
+	var sphinxPath sphinx.PaymentPath
+
+	// We fill our first hop in with the introduction point for our route
+	// and its encrypted data. We specifically separate this hop out because
+	// we do not want to use the blinded node ID for the first hop.
+	sphinxPath[0] = sphinx.OnionHop{
+		NodePub: *blindedRoute.IntroductionPoint,
+		HopPayload: sphinx.HopPayload{
+			Type:    sphinx.PayloadTLV,
+			Payload: blindedRoute.EncryptedData[0],
+		},
+	}
+
+	// For all remaining hops, we'll fill in the blinded node id and
+	// encrypted data.
+	for i := 1; i < len(blindedRoute.EncryptedData); i++ {
+		sphinxPath[i] = sphinx.OnionHop{
+			NodePub: *blindedRoute.BlindedHops[i],
+			HopPayload: sphinx.HopPayload{
+				Type:    sphinx.PayloadTLV,
+				Payload: blindedRoute.EncryptedData[i],
+			},
+		}
+	}
+
+	return &sphinxPath, nil
+}

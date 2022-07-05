@@ -73,3 +73,90 @@ func TestCreatePathToBlind(t *testing.T) {
 		})
 	}
 }
+
+// TestBlindedToSphinx tests conversion of a blinded path to a sphinx path.
+func TestBlindedToSphinx(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 4)
+
+	var (
+		payload0 = []byte{0, 0, 0}
+		payload1 = []byte{1, 1, 1}
+		payload2 = []byte{2, 2, 2}
+	)
+
+	tests := []struct {
+		name         string
+		blindedPath  *sphinx.BlindedPath
+		expectedPath *sphinx.PaymentPath
+	}{
+		{
+			name: "only introduction point",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					payload0,
+				},
+			},
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[0],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+			},
+		},
+		{
+			name: "three hops",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					payload0, payload1, payload2,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					// Note that the first blinded hop is
+					// the introduction node, which should
+					// not be used in our sphinx path. We
+					// add an extra pubkey here so that
+					// it'll be detected if used.
+					pubkeys[3],
+					pubkeys[1],
+					pubkeys[2],
+				},
+			},
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[0],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload2,
+					},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			actualPath, err := blindedToSphinx(testCase.blindedPath)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedPath, actualPath)
+		})
+	}
+}
