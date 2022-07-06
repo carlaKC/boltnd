@@ -1,6 +1,7 @@
 package rpcserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -23,12 +24,19 @@ type Server struct {
 	// only be non-nil once Start() has been called.
 	lnd *lndclient.LndServices
 
+	// ready is closed once the server is fully set up and ready to operate.
+	// This is required because we only receive our lnd dependency on
+	// Start().
+	ready chan (struct{})
+
 	offersrpc.UnimplementedOffersServer
 }
 
 // NewServer creates an offers server.
 func NewServer() (*Server, error) {
-	return &Server{}, nil
+	return &Server{
+		ready: make(chan struct{}),
+	}, nil
 }
 
 // Start starts the offers server.
@@ -39,6 +47,8 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 
 	log.Info("Starting rpc server")
 	s.lnd = lnd
+
+	close(s.ready)
 
 	return nil
 }
@@ -53,4 +63,13 @@ func (s *Server) Stop() error {
 	defer log.Info("Stopped rpc server")
 
 	return nil
+}
+
+// waitForReady blocks until the server is initialized or the context provided
+// is cancelled.
+func (s *Server) waitForReady(ctx context.Context) {
+	select {
+	case <-s.ready:
+	case <-ctx.Done():
+	}
 }
