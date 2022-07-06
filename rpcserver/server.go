@@ -8,6 +8,8 @@ import (
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/lightninglabs/lndclient"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Compile time check that this server implements our grpc server.
@@ -67,9 +69,12 @@ func (s *Server) Stop() error {
 
 // waitForReady blocks until the server is initialized or the context provided
 // is cancelled.
-func (s *Server) waitForReady(ctx context.Context) {
+func (s *Server) waitForReady(ctx context.Context) error {
 	select {
 	case <-s.ready:
+		return nil
+
 	case <-ctx.Done():
+		return status.Error(codes.Unavailable, "server not ready")
 	}
 }
