@@ -3,12 +3,24 @@ package boltnd
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"time"
 
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"github.com/lightningnetwork/lnd/signal"
+)
+
+const (
+	// DefaultLNDRetries is the default number of times we retry connecting
+	// to lnd before erroring out.
+	DefaultLNDRetries = 4
+
+	// DefaultLNDWait is the default amount of time we backoff between
+	// lnd connection attempts.
+	DefaultLNDWait = time.Second * 10
 )
 
 // MinimumLNDVersion is the minimum lnd version and set of build tags required.
@@ -32,6 +44,41 @@ type Config struct {
 	// RequestShutdown is an optional closure to request clean shutdown
 	// from the calling entity if the boltnd instance errors out.
 	RequestShutdown func()
+
+	// LNDRetires is the number of times we try to connect to lnd's grpc
+	// server (with backoff set by LNDWait) before exiting with an error.
+	// This value should be set to 0 if we want to immediately exit if
+	// we can't successfully connect.
+	LNDRetires uint8
+
+	// LNDWait is the amount of time to wait between retries to connect to
+	// lnd's grpc server.
+	LNDWait time.Duration
+}
+
+// DefaultConfig returns a default config.
+func DefaultConfig() *Config {
+	return &Config{
+		// Our default lndclient config uses the default values as set
+		// in lnd. These values aren't all exported in lnd, so we use
+		// the defaults as in 0.15.
+		LndClientCfg: &lndclient.LndServicesConfig{
+			LndAddress: "localhost:10009",
+			MacaroonDir: filepath.Join(
+				lnd.DefaultLndDir, "data", "chain", "mainnet",
+			),
+
+			TLSPath: filepath.Join(
+				lnd.DefaultLndDir, "tls.cert",
+			),
+			CheckVersion:          MinimumLNDVersion,
+			BlockUntilChainSynced: true,
+			BlockUntilUnlocked:    true,
+			Network:               "mainnet",
+		},
+		LNDRetires: DefaultLNDRetries,
+		LNDWait:    DefaultLNDWait,
+	}
 }
 
 // Validate ensures that we have all the required config values set.
@@ -49,6 +96,10 @@ func (c *Config) Validate() error {
 		c.LndClientCfg.CheckVersion, MinimumLNDVersion,
 	); err != nil {
 		return err
+	}
+
+	if c.LNDWait < 0 {
+		return fmt.Errorf("wait: %v must be > 0", c.LNDWait)
 	}
 
 	return nil

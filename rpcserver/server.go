@@ -21,7 +21,7 @@ type Server struct {
 	// to connect to the grpc servers, this can't be done while we're busy
 	// setting up ourselves as a sub-server. Consequently, this value will
 	// only be non-nil once Start() has been called.
-	lnd *lndclient.GrpcLndServices
+	lnd *lndclient.LndServices
 
 	offersrpc.UnimplementedOffersServer
 }
@@ -32,12 +32,13 @@ func NewServer() (*Server, error) {
 }
 
 // Start starts the offers server.
-func (s *Server) Start() error {
+func (s *Server) Start(lnd *lndclient.LndServices) error {
 	if !atomic.CompareAndSwapInt32(&s.started, 0, 1) {
 		return errors.New("server already started")
 	}
 
 	log.Info("Starting rpc server")
+	s.lnd = lnd
 
 	return nil
 }
