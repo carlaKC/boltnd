@@ -2,6 +2,7 @@ package itest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -10,6 +11,7 @@ import (
 
 const (
 	onionMsgProtocolOverride = "--protocol.custom-message=513"
+	defaultTimeout           = time.Second * 30
 )
 
 type bolt12TestSetup struct {
