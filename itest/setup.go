@@ -39,10 +39,10 @@ func setupForBolt12(t *testing.T, net *lntest.NetworkHarness) *bolt12TestSetup {
 	require.NoError(t, err, "bob restart")
 
 	// Next, connect to each node's offers subserver.
-	aliceConn, err := net.Alice.ConnectRPCWithMacaroon(nil)
+	aliceConn, err := net.Alice.ConnectRPC(true)
 	require.NoError(t, err, "alice grpc conn")
 
-	bobConn, err := net.Bob.ConnectRPCWithMacaroon(nil)
+	bobConn, err := net.Bob.ConnectRPC(true)
 	require.NoError(t, err, "bob grpc conn")
 
 	return &bolt12TestSetup{

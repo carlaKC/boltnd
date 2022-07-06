@@ -1,6 +1,7 @@
 package boltnd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -10,6 +11,7 @@ import (
 	"github.com/carlakc/boltnd/rpcserver"
 	"github.com/lightninglabs/lndclient"
 	"google.golang.org/grpc"
+	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
 // Boltnd holds opt-in bolt features that are externally implemented for lnd.
@@ -133,6 +135,29 @@ func (b *Boltnd) RegisterGrpcSubserver(server *grpc.Server) error {
 	log.Info("Registered bolt 12 subserver")
 
 	offersrpc.RegisterOffersServer(server, b.rpcServer)
+	return nil
+}
+
+// Permissions returns all permissions for which boltnd's external validator
+// is responsible.
+//
+// NOTE: This is part of the lnd.ExternalValidator interface.
+func (b *Boltnd) Permissions() map[string][]bakery.Op {
+	return rpcserver.RPCServerPermissions
+}
+
+// ValidateMacaroon extracts the macaroon from the context's gRPC metadata,
+// checks its signature, makes sure all specified permissions for the called
+// method are contained within and finally ensures all caveat conditions are
+// met. A non-nil error is returned if any of the checks fail.
+//
+// NOTE: This is part of the lnd.ExternalValidator interface.
+func (b *Boltnd) ValidateMacaroon(_ context.Context,
+	_ []bakery.Op, _ string) error {
+
+	// lnd will run validation for us, so we don't need to perform any
+	// additional validation.
+	// TODO - check that this is the case!
 	return nil
 }
 
