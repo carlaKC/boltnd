@@ -51,6 +51,9 @@ func NewOnionMessenger(lnd LndOnionMsg) *Messenger {
 	}
 }
 
+// Compile time check that Messenger satisfies the OnionMessenger interface.
+var _ OnionMessenger = (*Messenger)(nil)
+
 // SendMessage sends an onion message to the peer provided. If we are not
 // currently connected to a peer, the messenger will directly connect to it
 // and send the message.

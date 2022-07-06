@@ -24,3 +24,10 @@ type LndOnionMsg interface {
 	Connect(ctx context.Context, peer route.Vertex, host string,
 		permanent bool) error
 }
+
+// OnionMessenger is an interface implemented by objects that can send and
+// receive onion messages.
+type OnionMessenger interface {
+	// SendMessage sends an onion message to the peer specified.
+	SendMessage(ctx context.Context, peer route.Vertex) error
+}
