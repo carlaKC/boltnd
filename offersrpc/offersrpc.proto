@@ -5,4 +5,20 @@ package offersrpc;
 option go_package = "github.com/carlakc/boltnd/offersrpc";
 
 service Offers {
+    rpc SendOnionMessage (SendOnionMessageRequest)
+        returns (SendOnionMessageResponse);
+}
+
+message SendOnionMessageRequest {
+    // The pubkey of the peer to send the message to. As currently implemented
+    // the server will make an ad-hoc connection to the peer (if not already
+    // connected) to deliver the message.
+    //
+    // NB: This will reveal your IP address if you are not running tor. In
+    // future iterations this API will find a route to the peer and send the
+    // message along a blinded path, protecting sender identity.
+    bytes pubkey = 1;
+}
+
+message SendOnionMessageResponse {
 }
