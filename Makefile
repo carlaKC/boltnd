@@ -1,5 +1,10 @@
 # The functionality in this makefile is largely copied from lnd/Makefile, 
 # credit to LL devs.
+
+PKG := github.com/carlakc/boltnd
+
+GOTEST := go test
+
 DOCKER_TOOLS = docker run -v $$(pwd):/build carlakirkcohen/lnd-tools
 
 # Linting uses a lot of memory, so keep it under control by limiting the number
@@ -14,6 +19,8 @@ define print
 	echo $(GREEN)$1$(NC)
 endef
 
+include make/testing_flags.mk
+
 # =========
 # UTILITIES
 # =========
@@ -25,4 +32,12 @@ rpc:
 lint: 
 	@$(call print, "Linting source.")
 	$(DOCKER_TOOLS) golangci-lint run -v $(LINT_WORKERS)
+
+# =====
+# TESTS
+# =====
+
+unit: 
+	@$(call print, "Running unit tests.")
+	$(UNIT)
 
