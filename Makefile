@@ -2,8 +2,13 @@
 # credit to LL devs.
 
 PKG := github.com/carlakc/boltnd
+ESCPKG := github.com\/carlakc\/boltnd
 
 GOTEST := go test
+GOACC_PKG := github.com/ory/go-acc
+
+GO_BIN := ${GOPATH}/bin
+GOACC_BIN := $(GO_BIN)/go-acc
 
 DOCKER_TOOLS = docker run -v $$(pwd):/build carlakirkcohen/lnd-tools
 
@@ -40,4 +45,16 @@ lint:
 unit: 
 	@$(call print, "Running unit tests.")
 	$(UNIT)
+
+unit-cover: $(GOACC_BIN)
+	@$(call print, "Running unit coverage tests.")
+	$(GOACC_BIN) $(COVER_PKG) -- -tags="$(LOG_TAGS)"
+
+# ============
+# DEPENDENCIES
+# ============
+
+$(GOACC_BIN):
+	@$(call print, "Installing go-acc.")
+	go install -trimpath -tags=tools $(GOACC_PKG)@latest
 

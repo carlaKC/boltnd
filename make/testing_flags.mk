@@ -1,13 +1,16 @@
 # The functionality in this makefile is largely copied from lnd's 
 # make/testing_flags.mk, full credit to LL devs.
+COVER_PKG = $$(go list -deps -tags="$(DEV_TAGS)" ./... | grep '$(PKG)' | grep -v offersrpc)
 
 GOLIST := go list -deps $(PKG)/... | grep '$(PKG)'
+GOLISTCOVER := $(shell go list -deps -f '{{.ImportPath}}' ./... | grep '$(PKG)' | sed -e 's/^$(ESCPKG)/./')
 
 # If specific package is being unit tested, construct the full name of the
 # subpackage.
 ifneq ($(pkg),)
 UNITPKG := $(PKG)/$(pkg)
 UNIT_TARGETED = yes
+COVER_PKG = $(PKG)/$(pkg)
 endif
 
 # If a specific unit test case is being target, construct test.run filter.
