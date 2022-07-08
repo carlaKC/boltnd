@@ -6,17 +6,21 @@ ESCPKG := github.com\/carlakc\/boltnd
 
 GOTEST := go test
 GOACC_PKG := github.com/ory/go-acc
+LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
 
 GO_BIN := ${GOPATH}/bin
 GOACC_BIN := $(GO_BIN)/go-acc
+LINT_BIN := $(GO_BIN)/golangci-lint
 
-DOCKER_TOOLS = docker run -v $$(pwd):/build carlakirkcohen/lnd-tools
+LINT_VER = v1.46.2
 
 # Linting uses a lot of memory, so keep it under control by limiting the number
 # of workers if requested.
 ifneq ($(workers),)
 LINT_WORKERS = --concurrency=$(workers)
 endif
+
+LINT = $(LINT_BIN) run -v $(LINT_WORKERS)
 
 GREEN := "\\033[0;32m"
 NC := "\\033[0m"
@@ -34,9 +38,9 @@ rpc:
 	@$(call print, "Compiling protos.")
 	cd ./offersrpc; ./gen_protos_docker.sh
 
-lint: 
+lint: $(LINT_BIN)
 	@$(call print, "Linting source.")
-	$(DOCKER_TOOLS) golangci-lint run -v $(LINT_WORKERS)
+	$(LINT)
 
 # =====
 # TESTS
@@ -57,4 +61,8 @@ unit-cover: $(GOACC_BIN)
 $(GOACC_BIN):
 	@$(call print, "Installing go-acc.")
 	go install -trimpath -tags=tools $(GOACC_PKG)@latest
+
+$(LINT_BIN):
+	@$(call print, "Installing linter.")
+	go install -trimpath -tags=tools $(LINT_PKG)@$(LINT_VER)
 
