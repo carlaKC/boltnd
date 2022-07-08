@@ -115,7 +115,7 @@ func (b *Boltnd) Stop() error {
 }
 
 // requestShutdown calls our graceful shutdown closure, if supplied.
-func (b *Boltnd) requestShutdown() {
+func (b *Boltnd) requestShutdown() { // nolint: unused
 	if b.cfg.RequestShutdown == nil {
 		log.Info("No graceful shutdown closure provided")
 		return

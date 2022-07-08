@@ -69,7 +69,7 @@ func (s *Server) Stop() error {
 
 // waitForReady blocks until the server is initialized or the context provided
 // is cancelled.
-func (s *Server) waitForReady(ctx context.Context) error {
+func (s *Server) waitForReady(ctx context.Context) error { // nolint: unused
 	select {
 	case <-s.ready:
 		return nil
