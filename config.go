@@ -29,7 +29,11 @@ var MinimumLNDVersion = &verrpc.Version{
 	AppMinor: 15,
 	AppPatch: 0,
 	BuildTags: []string{
-		"signrpc", "walletrpc", "chainrpc", "invoicesrpc", "bolt12",
+		"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
+		// TODO(carla): lnd's itests don't set this build tag, but
+		// running vanilla lnd does. Figure out why and require this
+		// tag again.
+		// "bolt12",
 	},
 }
 
