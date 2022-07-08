@@ -4,6 +4,8 @@
 PKG := github.com/carlakc/boltnd
 ESCPKG := github.com\/carlakc\/boltnd
 
+XARGS := xargs -L 1
+
 GOTEST := go test
 GOACC_PKG := github.com/ory/go-acc
 LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
