@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -38,6 +40,9 @@ type Messenger struct {
 	// lnd provides the lnd apis required for onion messaging.
 	lnd LndOnionMsg
 
+	// router provides onion routing capabilities for the messenger.
+	router *sphinx.Router
+
 	// lookupPeerBackoff is the amount of time that we back off for when
 	// waiting to connect to a peer.
 	lookupPeerBackoff time.Duration
@@ -55,9 +60,14 @@ type Messenger struct {
 }
 
 // NewOnionMessenger creates a new onion messenger.
-func NewOnionMessenger(lnd LndOnionMsg, shutdown func(error)) *Messenger {
+func NewOnionMessenger(params *chaincfg.Params, lnd LndOnionMsg,
+	nodeKeyECDH sphinx.SingleKeyECDH, shutdown func(error)) *Messenger {
+
 	return &Messenger{
-		lnd:                lnd,
+		lnd: lnd,
+		router: sphinx.NewRouter(
+			nodeKeyECDH, params, sphinx.NewMemoryReplayLog(),
+		),
 		lookupPeerBackoff:  lookupPeerBackoffDefault,
 		lookupPeerAttempts: lookupPeerAttemptsDefault,
 		requestShutdown:    shutdown,
@@ -72,6 +82,9 @@ func (m *Messenger) Start() error {
 	}
 
 	log.Info("Starting onion messenger")
+	if err := m.router.Start(); err != nil {
+		return fmt.Errorf("could not start router: %w", err)
+	}
 
 	return nil
 }
@@ -88,6 +101,11 @@ func (m *Messenger) Stop() error {
 	// Signal our goroutines to quit and wait for them to exit.
 	close(m.quit)
 	m.wg.Wait()
+
+	// Shutdown our onion router. We do this after shutting down goroutines
+	// so that any errors due to a stopped router don't error-out before we
+	// can cleanly shut down.
+	m.router.Stop()
 
 	return nil
 }

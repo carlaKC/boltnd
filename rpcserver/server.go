@@ -60,7 +60,18 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 
 	log.Info("Starting rpc server")
 	s.lnd = lnd
-	s.onionMsgr = onionmsg.NewOnionMessenger(lnd.Client, s.requestShutdown)
+
+	// Setup a router that our onion messenger can use, utilizing a
+	// signer that calls lnd's apis for cyrptographic operations.
+	nodeKeyECDH, err := onionmsg.NewNodeECDH(lnd.Client, lnd.Signer)
+	if err != nil {
+		return fmt.Errorf("could not create router signer: %w", err)
+	}
+
+	// Finally setup an onion messenger using the onion router.
+	s.onionMsgr = onionmsg.NewOnionMessenger(
+		lnd.ChainParams, lnd.Client, nodeKeyECDH, s.requestShutdown,
+	)
 
 	if err := s.onionMsgr.Start(); err != nil {
 		return fmt.Errorf("could not start onion messenger: %w", err)

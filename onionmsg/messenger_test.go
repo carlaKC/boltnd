@@ -5,8 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightninglabs/lndclient"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -243,9 +245,19 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 
 	testCase.setMock(lnd.Mock)
 
+	privkeys := testutils.GetPrivkeys(t, 1)
+	nodeKey := privkeys[0]
+
+	// Create a simple SingleKeyECDH impl here for testing.
+	nodeKeyECDH := &sphinx.PrivKeyECDH{
+		PrivKey: nodeKey,
+	}
+
 	// We don't expect the messenger's shutdown function to be used, so
 	// we can provide nil (knowing that our tests will panic if it's used).
-	messenger := NewOnionMessenger(lnd, nil)
+	messenger := NewOnionMessenger(
+		&chaincfg.RegressionNetParams, lnd, nodeKeyECDH, nil,
+	)
 
 	// Overwrite our peer lookup defaults so that we don't have sleeps in
 	// our tests.
