@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/rpcserver"
 	"github.com/lightninglabs/lndclient"
 	"google.golang.org/grpc"
@@ -171,4 +172,5 @@ func setupLoggers(cfg *Config) {
 
 	cfg.SetupLogger(Subsystem, UseLogger)
 	cfg.SetupLogger(rpcserver.Subsystem, rpcserver.UseLogger)
+	cfg.SetupLogger(onionmsg.Subsystem, onionmsg.UseLogger)
 }

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -30,6 +32,9 @@ var (
 
 // Messenger houses the functionality to send and receive onion messages.
 type Messenger struct {
+	started int32 // to be used atomically
+	stopped int32 // to be used atomically
+
 	// lnd provides the lnd apis required for onion messaging.
 	lnd LndOnionMsg
 
@@ -40,6 +45,9 @@ type Messenger struct {
 	// lookupPeerAttempts is the number of times we try to lookup our peer
 	// once connected.
 	lookupPeerAttempts int
+
+	wg   sync.WaitGroup
+	quit chan struct{}
 }
 
 // NewOnionMessenger creates a new onion messenger.
@@ -48,7 +56,35 @@ func NewOnionMessenger(lnd LndOnionMsg) *Messenger {
 		lnd:                lnd,
 		lookupPeerBackoff:  lookupPeerBackoffDefault,
 		lookupPeerAttempts: lookupPeerAttemptsDefault,
+		quit:               make(chan struct{}),
 	}
+}
+
+// Start the messenger, running all goroutines required.
+func (m *Messenger) Start() error {
+	if !atomic.CompareAndSwapInt32(&m.started, 0, 1) {
+		return errors.New("messenger already started")
+	}
+
+	log.Info("Starting onion messenger")
+
+	return nil
+}
+
+// Stop shuts down the messenger and waits for all goroutines to exit.
+func (m *Messenger) Stop() error {
+	if !atomic.CompareAndSwapInt32(&m.stopped, 0, 1) {
+		return fmt.Errorf("messenger already stopped")
+	}
+
+	log.Info("Stopping onion messenger")
+	defer log.Info("Onion messenger stopped")
+
+	// Signal our goroutines to quit and wait for them to exit.
+	close(m.quit)
+	m.wg.Wait()
+
+	return nil
 }
 
 // Compile time check that Messenger satisfies the OnionMessenger interface.
