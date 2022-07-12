@@ -28,6 +28,12 @@ type LndOnionMsg interface {
 // OnionMessenger is an interface implemented by objects that can send and
 // receive onion messages.
 type OnionMessenger interface {
+	// Start the onion messenger.
+	Start() error
+
+	// Stop the onion messenger, blocking until all goroutines exit.
+	Stop() error
+
 	// SendMessage sends an onion message to the peer specified.
 	SendMessage(ctx context.Context, peer route.Vertex) error
 }

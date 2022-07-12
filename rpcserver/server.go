@@ -57,6 +57,10 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 	s.lnd = lnd
 	s.onionMsgr = onionmsg.NewOnionMessenger(lnd.Client)
 
+	if err := s.onionMsgr.Start(); err != nil {
+		return fmt.Errorf("could not start onion messenger: %w", err)
+	}
+
 	close(s.ready)
 
 	return nil
@@ -71,6 +75,13 @@ func (s *Server) Stop() error {
 	log.Info("Stopping rpc server")
 	defer log.Info("Stopped rpc server")
 
+	// Shut down onion messenger if non-nil.
+	if s.onionMsgr != nil {
+		if err := s.onionMsgr.Stop(); err != nil {
+			return fmt.Errorf("could not stop onion messenger: %w",
+				err)
+		}
+	}
 	return nil
 }
 
