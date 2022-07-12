@@ -2,6 +2,7 @@ package itest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -10,6 +11,7 @@ import (
 
 const (
 	onionMsgProtocolOverride = "--protocol.custom-message=513"
+	defaultTimeout           = time.Second * 30
 )
 
 type bolt12TestSetup struct {
@@ -39,23 +41,29 @@ func setupForBolt12(t *testing.T, net *lntest.NetworkHarness) *bolt12TestSetup {
 	require.NoError(t, err, "bob restart")
 
 	// Next, connect to each node's offers subserver.
-	aliceConn, err := net.Alice.ConnectRPC(true)
-	require.NoError(t, err, "alice grpc conn")
-
-	bobConn, err := net.Bob.ConnectRPC(true)
-	require.NoError(t, err, "bob grpc conn")
+	aliceClient, aliceClean := bolt12Client(t, net.Alice)
+	bobClient, bobClean := bolt12Client(t, net.Bob)
 
 	return &bolt12TestSetup{
-		aliceOffers: offersrpc.NewOffersClient(aliceConn),
-		bobOffers:   offersrpc.NewOffersClient(bobConn),
+		aliceOffers: aliceClient,
+		bobOffers:   bobClient,
 		cleanup: func() {
-			if err := aliceConn.Close(); err != nil {
-				t.Logf("alice grpc conn close: %v", err)
-			}
-
-			if err := bobConn.Close(); err != nil {
-				t.Logf("bob grpc conn close: %v", err)
-			}
+			aliceClean()
+			bobClean()
 		},
+	}
+}
+
+// bolt12Client returns an offersrpc client and cleanup for a node.
+func bolt12Client(t *testing.T, node *lntest.HarnessNode) (
+	offersrpc.OffersClient, func()) {
+
+	conn, err := node.ConnectRPC(true)
+	require.NoError(t, err, "%v grpc conn", node.Name())
+
+	return offersrpc.NewOffersClient(conn), func() {
+		if err := conn.Close(); err != nil {
+			t.Logf("%v grpc conn close %v", node.Name(), err)
+		}
 	}
 }
