@@ -41,6 +41,31 @@ func MockSendAnyCustomMessage(m *mock.Mock, err error) {
 	)
 }
 
+// SubscribeCustomMessages mocks subscribing to custom messages from lnd.
+func (m *MockLND) SubscribeCustomMessages(ctx context.Context) (
+	<-chan lndclient.CustomMessage, <-chan error, error) {
+
+	args := m.Mock.MethodCalled("SubscribeCustomMessages", ctx)
+
+	msgChan := args.Get(0).(<-chan lndclient.CustomMessage)
+	errChan := args.Get(1).(<-chan error)
+
+	return msgChan, errChan, args.Error(2)
+}
+
+// MockSubscribeCustomMessages primes our mock to return the channels and error
+// provided when we subscribe to custom messages.
+func MockSubscribeCustomMessages(m *mock.Mock,
+	msgChan <-chan lndclient.CustomMessage, errChan <-chan error,
+	err error) {
+
+	m.On(
+		"SubscribeCustomMessages", mock.Anything,
+	).Once().Return(
+		msgChan, errChan, err,
+	)
+}
+
 // GetNodeInfo mocks looking up a node in the public ln graph.
 func (m *MockLND) GetNodeInfo(ctx context.Context, pubkey route.Vertex,
 	includeChannels bool) (*lndclient.NodeInfo, error) {
@@ -100,5 +125,22 @@ func MockConnect(m *mock.Mock, peer route.Vertex, host string, perm bool,
 		"Connect", mock.Anything, peer, host, perm,
 	).Once().Return(
 		err,
+	)
+}
+
+// GetInfo mocks a call to lnd's getinfo.
+func (m *MockLND) GetInfo(ctx context.Context) (*lndclient.Info, error) {
+	args := m.Mock.MethodCalled("GetInfo", ctx)
+
+	return args.Get(0).(*lndclient.Info), args.Error(1)
+}
+
+// MockGetInfo primes our mock to return the info and error provided when
+// GetInfo is called.
+func MockGetInfo(m *mock.Mock, info *lndclient.Info, err error) {
+	m.On(
+		"GetInfo", mock.Anything,
+	).Once().Return(
+		info, err,
 	)
 }

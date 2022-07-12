@@ -13,6 +13,11 @@ type LndOnionMsg interface {
 	// SendCustomMessage sends a custom message to a peer.
 	SendCustomMessage(ctx context.Context, msg lndclient.CustomMessage) error
 
+	// SubscribeCustomMessages subscribes to custom messages received by
+	// lnd.
+	SubscribeCustomMessages(ctx context.Context) (
+		<-chan lndclient.CustomMessage, <-chan error, error)
+
 	// GetNodeInfo looks up a node in the public ln graph.
 	GetNodeInfo(ctx context.Context, pubkey route.Vertex,
 		includeChannels bool) (*lndclient.NodeInfo, error)
@@ -23,6 +28,9 @@ type LndOnionMsg interface {
 	// Connect makes a connection to the peer provided.
 	Connect(ctx context.Context, peer route.Vertex, host string,
 		permanent bool) error
+
+	// GetInfo returns information about the lnd node.
+	GetInfo(ctx context.Context) (*lndclient.Info, error)
 }
 
 // OnionMessenger is an interface implemented by objects that can send and
