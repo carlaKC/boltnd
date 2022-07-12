@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -358,5 +359,184 @@ func TestHandleOnionMessage(t *testing.T) {
 			)
 			require.True(t, errors.Is(err, testCase.expectedErr))
 		})
+	}
+}
+
+// receiveMessageHandler is the function signature for handlers that drive
+// tests for our receive message loop.
+type receiveMessageHandler func(*testing.T, chan<- lndclient.CustomMessage,
+	chan<- error)
+
+// sendMsg is a helped that sends a custom message into the channel provided,
+// failing the test if it is not delivered on time.
+func sendMsg(t *testing.T, msgChan chan<- lndclient.CustomMessage,
+	msg lndclient.CustomMessage) {
+
+	select {
+	case msgChan <- msg:
+	case <-time.After(defaultTimeout):
+		t.Fatalf("could not send message: %v", msg)
+	}
+}
+
+// sendErr is a helper that sends an error into the channel provided, failing
+// the test if it is not delivered in time.
+func sendErr(t *testing.T, errChan chan<- error, err error) {
+	select {
+	case errChan <- err:
+	case <-time.After(defaultTimeout):
+		t.Fatalf("could not send error: %v", err)
+	}
+}
+
+// TestReceiveOnionMessages tests the messenger's receive loop for messages.
+func TestReceiveOnionMessages(t *testing.T) {
+	privkeys := testutils.GetPrivkeys(t, 1)
+
+	// Create an onion message that is *to our node* that we can use
+	// across tests.
+	nodePubkey := privkeys[0].PubKey()
+	nodeVertex, err := route.NewVertexFromBytes(
+		nodePubkey.SerializeCompressed(),
+	)
+	require.NoError(t, err, "node pubkey")
+
+	msg, err := customOnionMessage(nodeVertex)
+	require.NoError(t, err, "custom message")
+
+	mockErr := errors.New("mock")
+
+	tests := []struct {
+		name          string
+		handler       receiveMessageHandler
+		expectedError error
+	}{
+		{
+			name: "message sent",
+			handler: func(t *testing.T,
+				msgChan chan<- lndclient.CustomMessage,
+				errChan chan<- error) {
+
+				sendMsg(t, msgChan, *msg)
+			},
+		}, {
+			name: "non-onion message",
+			handler: func(t *testing.T,
+				msgChan chan<- lndclient.CustomMessage,
+				errChan chan<- error) {
+
+				msg := lndclient.CustomMessage{
+					MsgType: 1001,
+				}
+
+				sendMsg(t, msgChan, msg)
+			},
+			expectedError: nil,
+		},
+		{
+			name: "lnd shutdown - messages",
+			handler: func(t *testing.T,
+				msgChan chan<- lndclient.CustomMessage,
+				errChan chan<- error) {
+
+				close(msgChan)
+			},
+			expectedError: ErrLNDShutdown,
+		},
+		{
+			name: "lnd shutdown - errors",
+			handler: func(t *testing.T,
+				msgChan chan<- lndclient.CustomMessage,
+				errChan chan<- error) {
+
+				close(errChan)
+			},
+			expectedError: ErrLNDShutdown,
+		},
+		{
+			name: "subscription error",
+			handler: func(t *testing.T,
+				msgChan chan<- lndclient.CustomMessage,
+				errChan chan<- error) {
+
+				sendErr(t, errChan, mockErr)
+			},
+			expectedError: mockErr,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			testReceiveOnionMessages(
+				t, privkeys[0], testCase.handler,
+				testCase.expectedError,
+			)
+		})
+	}
+}
+
+func testReceiveOnionMessages(t *testing.T, privkey *btcec.PrivateKey,
+	handler receiveMessageHandler, expectedErr error) {
+
+	// Create a simple node key ecdh impl for our messenger.
+	nodeKeyECDH := &sphinx.PrivKeyECDH{
+		PrivKey: privkey,
+	}
+
+	// Setup a mocked lnd and prime it to have SubscribeCustomMessages
+	// called.
+	lnd := testutils.NewMockLnd()
+	defer lnd.Mock.AssertExpectations(t)
+
+	// Create channels to deliver messages and fail if they block for too
+	// long.
+	var (
+		msgChan = make(chan lndclient.CustomMessage)
+		errChan = make(chan error)
+
+		shutdownChan    = make(chan error)
+		requestShutdown = func(err error) {
+			select {
+			case shutdownChan <- err:
+			case <-time.After(defaultTimeout):
+				t.Fatalf("did not shutdown with: %v", err)
+			}
+		}
+	)
+
+	// Set up our mock to return our message channels when we subscribe to
+	// custom lnd messages.
+	// Note: might be wrong types?
+	testutils.MockSubscribeCustomMessages(
+		lnd.Mock, msgChan, errChan, nil,
+	)
+
+	messenger := NewOnionMessenger(
+		&chaincfg.RegressionNetParams, lnd, nodeKeyECDH, requestShutdown,
+	)
+	err := messenger.Start()
+	require.NoError(t, err, "start messenger")
+
+	// Shutdown our messenger at the end of the test.
+	defer func() {
+		err := messenger.Stop()
+		require.NoError(t, err, "stop messenger")
+	}()
+
+	// Run the specific test's handler.
+	handler(t, msgChan, errChan)
+
+	// If we expect to exit with an error, expect it to be surfaced through
+	// requesting a graceful shutdown.
+	if expectedErr != nil {
+		select {
+		case err := <-shutdownChan:
+			require.True(t, errors.Is(err, expectedErr), "shutdown")
+
+		case <-time.After(defaultTimeout):
+			t.Fatal("no shutdown error recieved")
+		}
 	}
 }

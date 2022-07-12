@@ -48,6 +48,9 @@ var (
 
 	// ErrShuttingDown is returned when the messenger exits.
 	ErrShuttingDown = errors.New("messenger shutting down")
+
+	// ErrLNDShutdown is returned when lnd shuts down one of our streams.
+	ErrLNDShutdown = errors.New("lnd shutting down")
 )
 
 // Messenger houses the functionality to send and receive onion messages.
@@ -103,6 +106,16 @@ func (m *Messenger) Start() error {
 	if err := m.router.Start(); err != nil {
 		return fmt.Errorf("could not start router: %w", err)
 	}
+
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+
+		err := m.receiveOnionMessages(context.Background())
+		if err != nil && err != ErrShuttingDown {
+			m.requestShutdown(err)
+		}
+	}()
 
 	return nil
 }
@@ -279,7 +292,7 @@ func (m *Messenger) receiveOnionMessages(ctx context.Context) error {
 			// If our message channel has been closed, the stream
 			// has exited.
 			if !ok {
-				return nil
+				return fmt.Errorf("%w: messages", ErrLNDShutdown)
 			}
 
 			// Skip over all non-onion messages.
@@ -332,7 +345,8 @@ func (m *Messenger) receiveOnionMessages(ctx context.Context) error {
 			// If our error channel has been closed, the stream
 			// has exited.
 			if !ok {
-				return nil
+				return fmt.Errorf("%w: message errors",
+					ErrLNDShutdown)
 			}
 
 			return fmt.Errorf("message subscription failed: %w",
