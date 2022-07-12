@@ -3,7 +3,9 @@ package testutils
 import (
 	"context"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
 )
@@ -142,5 +144,31 @@ func MockGetInfo(m *mock.Mock, info *lndclient.Info, err error) {
 		"GetInfo", mock.Anything,
 	).Once().Return(
 		info, err,
+	)
+}
+
+// DeriveSharedKey mocks lnd's ECDH operations.
+func (m *MockLND) DeriveSharedKey(ctx context.Context,
+	ephemeralPubKey *btcec.PublicKey, keyLocator *keychain.KeyLocator) (
+	[32]byte, error) {
+
+	args := m.Mock.MethodCalled(
+		"DeriveSharedKey", ctx, ephemeralPubKey, keyLocator,
+	)
+
+	key := args.Get(0).([32]byte)
+
+	return key, args.Error(1)
+}
+
+// MockDeriveSharedKey primes our mock to return the key and error provided
+// when derive shared key is called.
+func MockDeriveSharedKey(m *mock.Mock, ephemeral *btcec.PublicKey,
+	locator *keychain.KeyLocator, key [32]byte, err error) {
+
+	m.On(
+		"DeriveSharedKey", mock.Anything, ephemeral, locator,
+	).Once().Return(
+		key, err,
 	)
 }

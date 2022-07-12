@@ -3,7 +3,9 @@ package onionmsg
 import (
 	"context"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -31,6 +33,17 @@ type LndOnionMsg interface {
 
 	// GetInfo returns information about the lnd node.
 	GetInfo(ctx context.Context) (*lndclient.Info, error)
+}
+
+// LndOnionSigner is an interface describing the lnd dependencies required for
+// the onion messenger's cryptographic operations.
+type LndOnionSigner interface {
+	// DeriveSharedKey returns a shared secret key by performing
+	// Diffie-Hellman key derivation between the ephemeral public key and
+	// the key specified by the key locator (or the node's identity private
+	// key if no key locator is specified)
+	DeriveSharedKey(ctx context.Context, ephemeralPubKey *btcec.PublicKey,
+		keyLocator *keychain.KeyLocator) ([32]byte, error)
 }
 
 // OnionMessenger is an interface implemented by objects that can send and
