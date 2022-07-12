@@ -46,16 +46,21 @@ type Messenger struct {
 	// once connected.
 	lookupPeerAttempts int
 
+	// requestShutdown is called when the messenger experiences an error to
+	// signal to calling code that it should gracefully exit.
+	requestShutdown func(err error)
+
 	wg   sync.WaitGroup
 	quit chan struct{}
 }
 
 // NewOnionMessenger creates a new onion messenger.
-func NewOnionMessenger(lnd LndOnionMsg) *Messenger {
+func NewOnionMessenger(lnd LndOnionMsg, shutdown func(error)) *Messenger {
 	return &Messenger{
 		lnd:                lnd,
 		lookupPeerBackoff:  lookupPeerBackoffDefault,
 		lookupPeerAttempts: lookupPeerAttemptsDefault,
+		requestShutdown:    shutdown,
 		quit:               make(chan struct{}),
 	}
 }

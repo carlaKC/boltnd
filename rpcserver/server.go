@@ -37,13 +37,18 @@ type Server struct {
 	// Start().
 	ready chan (struct{})
 
+	// requestShutdown is called when the messenger experiences an error to
+	// signal to calling code that it should gracefully exit.
+	requestShutdown func(err error)
+
 	offersrpc.UnimplementedOffersServer
 }
 
 // NewServer creates an offers server.
-func NewServer() (*Server, error) {
+func NewServer(shutdown func(error)) (*Server, error) {
 	return &Server{
-		ready: make(chan struct{}),
+		ready:           make(chan struct{}),
+		requestShutdown: shutdown,
 	}, nil
 }
 
@@ -55,7 +60,7 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 
 	log.Info("Starting rpc server")
 	s.lnd = lnd
-	s.onionMsgr = onionmsg.NewOnionMessenger(lnd.Client)
+	s.onionMsgr = onionmsg.NewOnionMessenger(lnd.Client, s.requestShutdown)
 
 	if err := s.onionMsgr.Start(); err != nil {
 		return fmt.Errorf("could not start onion messenger: %w", err)

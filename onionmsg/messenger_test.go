@@ -243,7 +243,9 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 
 	testCase.setMock(lnd.Mock)
 
-	messenger := NewOnionMessenger(lnd)
+	// We don't expect the messenger's shutdown function to be used, so
+	// we can provide nil (knowing that our tests will panic if it's used).
+	messenger := NewOnionMessenger(lnd, nil)
 
 	// Overwrite our peer lookup defaults so that we don't have sleeps in
 	// our tests.
