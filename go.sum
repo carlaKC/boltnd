@@ -127,8 +127,8 @@ github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792 h1:R8vQdOQdZ9Y3
 github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792/go.mod h1:ghJtEyQwv5/p4Mg4C0fgbePVuGr935/5ddU9Z3TmDRY=
 github.com/btcsuite/winsvc v1.0.0 h1:J9B4L7e3oqhXOcm+2IuNApwzQec85lE+QaikUcCs+dk=
 github.com/btcsuite/winsvc v1.0.0/go.mod h1:jsenWakMcC0zFBFurPLEAyrnc/teJEM1O46fmI40EZs=
-github.com/carlakc/lndclient v0.0.0-20220708084624-1e349166f2e8 h1:o7FMzMtdve/p4tm7o4fIpLnbASWr5aE9xOiOajrrC1c=
-github.com/carlakc/lndclient v0.0.0-20220708084624-1e349166f2e8/go.mod h1:70h//SOGyAnXXaC2FvQG2P4amPceBbtCoptwXRgOxjU=
+github.com/carlakc/lndclient v0.0.0-20220712092532-fa472b93c04f h1:vfsLuxuFPptRg5zJhap7PLh/0/q3oMKBUE0e3fC9+fs=
+github.com/carlakc/lndclient v0.0.0-20220712092532-fa472b93c04f/go.mod h1:70h//SOGyAnXXaC2FvQG2P4amPceBbtCoptwXRgOxjU=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/certifi/gocertifi v0.0.0-20191021191039-0944d244cd40/go.mod h1:sGbDF6GwGcLpkNXPUTkMRoywsNa/ol15pxFe6ERfguA=
 github.com/certifi/gocertifi v0.0.0-20200922220541-2c3bb06c6054 h1:uH66TXeswKn5PW5zdZ39xEwfS9an067BirqA+P4QaLI=
