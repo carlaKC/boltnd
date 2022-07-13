@@ -76,17 +76,17 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath) (*sphinx.PaymentPath,
 	// We fill our first hop in with the introduction point for our route
 	// and its encrypted data. We specifically separate this hop out because
 	// we do not want to use the blinded node ID for the first hop.
-	sphinxPath[0] = sphinx.OnionHop{
+	/*sphinxPath[0] = sphinx.OnionHop{
 		NodePub: *blindedRoute.IntroductionPoint,
 		HopPayload: sphinx.HopPayload{
 			Type:    sphinx.PayloadTLV,
 			Payload: blindedRoute.EncryptedData[0],
 		},
-	}
+	}*/
 
 	// For all remaining hops, we'll fill in the blinded node id and
 	// encrypted data.
-	for i := 1; i < len(blindedRoute.EncryptedData); i++ {
+	for i := 0; i < len(blindedRoute.EncryptedData); i++ {
 		sphinxPath[i] = sphinx.OnionHop{
 			NodePub: *blindedRoute.BlindedHops[i],
 			HopPayload: sphinx.HopPayload{

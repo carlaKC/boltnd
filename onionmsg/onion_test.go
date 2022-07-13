@@ -1,11 +1,14 @@
 package onionmsg
 
 import (
+	"github.com/stretchr/testify/assert"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/testutils"
 	sphinx "github.com/lightningnetwork/lightning-onion"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/require"
 )
 
@@ -159,4 +162,44 @@ func TestBlindedToSphinx(t *testing.T) {
 			require.Equal(t, testCase.expectedPath, actualPath)
 		})
 	}
+}
+
+// TestHmacStuff is a unit test used to test unwrapping onions and figure out
+// why we're getting invalid hmac errors.
+func TestHmacStuff(t *testing.T) {
+	// Create a random private key for the receiver.
+	receiver, err := btcec.NewPrivateKey()
+	require.NoError(t, err, "private key")
+
+	receiverPubkey, err := route.NewVertexFromBytes(
+		receiver.PubKey().SerializeCompressed(),
+	)
+	require.NoError(t, err, "public key")
+
+	// Create a custom onion message for our peer.
+	onionMsg, err := customOnionMessage(receiverPubkey)
+	require.NoError(t, err, "create onion")
+
+	// Create ECDH interface ops for receiver.
+	receiverNodeKey := &sphinx.PrivKeyECDH{
+		PrivKey: receiver,
+	}
+
+	// Mock out lnd and create a messenger for our receiver.
+	lnd := testutils.NewMockLnd()
+	messenger := NewOnionMessenger(
+		&chaincfg.RegressionNetParams, lnd, receiverNodeKey, func(err error) {
+			t.Log(err)
+		},
+	)
+
+	testutils.MockSubscribeCustomMessages(lnd.Mock, nil, nil, nil)
+
+	require.NoError(t, messenger.Start(), "start msngr")
+	defer func() {
+		assert.NoError(t, messenger.Stop(), "stop msngr")
+	}()
+
+	err = messenger.handleOnionMessage(*onionMsg)
+	require.NoError(t, err, "handle msg")
 }
