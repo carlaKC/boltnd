@@ -90,16 +90,21 @@ func TestBlindedToSphinx(t *testing.T) {
 		expectedPath *sphinx.PaymentPath
 	}{
 		{
+			// We should use the blinded pubkey for our introduction
+			// node for onion messages.
 			name: "only introduction point",
 			blindedPath: &sphinx.BlindedPath{
 				IntroductionPoint: pubkeys[0],
 				EncryptedData: [][]byte{
 					payload0,
 				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+				},
 			},
 			expectedPath: &sphinx.PaymentPath{
 				{
-					NodePub: *pubkeys[0],
+					NodePub: *pubkeys[1],
 					HopPayload: sphinx.HopPayload{
 						Type:    sphinx.PayloadTLV,
 						Payload: payload0,
@@ -115,33 +120,28 @@ func TestBlindedToSphinx(t *testing.T) {
 					payload0, payload1, payload2,
 				},
 				BlindedHops: []*btcec.PublicKey{
-					// Note that the first blinded hop is
-					// the introduction node, which should
-					// not be used in our sphinx path. We
-					// add an extra pubkey here so that
-					// it'll be detected if used.
-					pubkeys[3],
 					pubkeys[1],
 					pubkeys[2],
+					pubkeys[3],
 				},
 			},
 			expectedPath: &sphinx.PaymentPath{
 				{
-					NodePub: *pubkeys[0],
+					NodePub: *pubkeys[1],
 					HopPayload: sphinx.HopPayload{
 						Type:    sphinx.PayloadTLV,
 						Payload: payload0,
 					},
 				},
 				{
-					NodePub: *pubkeys[1],
+					NodePub: *pubkeys[2],
 					HopPayload: sphinx.HopPayload{
 						Type:    sphinx.PayloadTLV,
 						Payload: payload1,
 					},
 				},
 				{
-					NodePub: *pubkeys[2],
+					NodePub: *pubkeys[3],
 					HopPayload: sphinx.HopPayload{
 						Type:    sphinx.PayloadTLV,
 						Payload: payload2,
