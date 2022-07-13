@@ -50,7 +50,6 @@ require (
 	github.com/fergusstrange/embedded-postgres v1.10.0 // indirect
 	github.com/form3tech-oss/jwt-go v3.2.3+incompatible // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
-	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -75,18 +74,10 @@ require (
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/jrick/logrotate v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
-	github.com/juju/clock v0.0.0-20220704231616-a2b96c8eeb27 // indirect
-	github.com/juju/collections v0.0.0-20220203020748-febd7cad8a7a // indirect
-	github.com/juju/errors v0.0.0-20220622220526-54a94488269b // indirect
 	github.com/juju/loggo v0.0.0-20210728185423-eebad3a902c4 // indirect
-	github.com/juju/mgo/v2 v2.0.0-20220111072304-f200228f1090 // indirect
-	github.com/juju/retry v0.0.0-20220204093819-62423bf33287 // indirect
-	github.com/juju/utils/v3 v3.0.0-20220203023959-c3fbc78a33b0 // indirect
-	github.com/juju/version/v2 v2.0.0-20220204124744-fc9915e3d935 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
-	github.com/kr/pretty v0.2.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.14.2 // indirect
@@ -159,8 +150,12 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-// This is a version of lndclient that includes custom messaging wrappers.
-replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20220712092532-fa472b93c04f
+// This is a version of lnd that points to lightning-onion with route blinding.
+replace github.com/lightningnetwork/lnd => github.com/carlakc/lnd v0.4.2-beta.0.20220713074143-78ecddd3e164
+
+// This is a version of lndclient that includes custom messaging wrappers and
+// points to a version of lnd that includes lightning-onion with route blinding.
+replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20220713074502-e96658c3c290
 
 // This is a version of lightning-onion that includes route blinding.
 replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lightning-onion v1.2.1-0.20220705120409-2f7de78cffba
