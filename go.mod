@@ -163,4 +163,4 @@ require (
 replace github.com/lightninglabs/lndclient => github.com/carlakc/lndclient v0.0.0-20220712092532-fa472b93c04f
 
 // This is a version of lightning-onion that includes route blinding.
-replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lightning-onion v1.2.1-0.20220705120237-ee90b334667d
+replace github.com/lightningnetwork/lightning-onion => github.com/ellemouton/lightning-onion v1.2.1-0.20220705120409-2f7de78cffba
