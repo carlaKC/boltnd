@@ -185,8 +185,8 @@ github.com/dustin/go-humanize v1.0.0 h1:VSnTsYCnlFHaM2/igO1h6X3HA71jcobQuxemgkq4
 github.com/dustin/go-humanize v1.0.0/go.mod h1:HtrtbFcZ19U5GC7JDqmcUSB87Iq5E25KnS6fMYU6eOk=
 github.com/dvyukov/go-fuzz v0.0.0-20210602112143-b1f3d6f4ef4e h1:qTP1telKJHlToHlwPQNmVg4yfMDMHe4Z3SYmzkrvA2M=
 github.com/dvyukov/go-fuzz v0.0.0-20210602112143-b1f3d6f4ef4e/go.mod h1:11Gm+ccJnvAhCNLlf5+cS9KjtbaD5I5zaZpFMsTHWTw=
-github.com/ellemouton/lightning-onion v1.2.1-0.20220705120237-ee90b334667d h1:YmBKcAs+xTFBcc1zrBt5fVids86nUgHmn6zy4z9EjuE=
-github.com/ellemouton/lightning-onion v1.2.1-0.20220705120237-ee90b334667d/go.mod h1:IpXmxKG482HAQC/aCn0Sd+DYmKlkfaNF/iUz298HhC0=
+github.com/ellemouton/lightning-onion v1.2.1-0.20220705120409-2f7de78cffba h1:8mD5X5sd2vLDogKPYNjcA6DKZqY+sYJwczv+zqa8UAQ=
+github.com/ellemouton/lightning-onion v1.2.1-0.20220705120409-2f7de78cffba/go.mod h1:IpXmxKG482HAQC/aCn0Sd+DYmKlkfaNF/iUz298HhC0=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
