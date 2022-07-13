@@ -22,4 +22,5 @@ func TestOnionMessageEncode(t *testing.T) {
 	actual := &OnionMessage{}
 	err = actual.Decode(buf, 0)
 	require.NoError(t, err, "onion decode")
+	require.Equal(t, expected, actual, "message comparison")
 }
