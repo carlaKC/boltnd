@@ -58,7 +58,7 @@ func (o *OnionMessage) Decode(r io.Reader, _ uint32) error {
 		return fmt.Errorf("decode onion len: %w", err)
 	}
 
-	o.OnionBlob = make([]byte, 0, onionLen)
+	o.OnionBlob = make([]byte, onionLen)
 	if err := lndwire.ReadElement(r, o.OnionBlob); err != nil {
 		return fmt.Errorf("read onion blob: %w", err)
 	}
