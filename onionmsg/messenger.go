@@ -30,6 +30,21 @@ var (
 	// ErrNoConnection is returned if we don't successfully connect to our
 	// peer within our set number of retries.
 	ErrNoConnection = errors.New("peer not connected within wait period")
+
+	// ErrNoForwarding is returned if we receive an onion message intended
+	// to be forwarded, but do not support forwarding.
+	ErrNoForwarding = errors.New("received onion message for forwarding, " +
+		"not supported")
+
+	// ErrBadMessage is returned when we can't process an onion message.
+	ErrBadMessage = errors.New("onion message processing failed")
+
+	// ErrBadOnionMsg is returned when we receive a bad onion message.
+	ErrBadOnionMsg = errors.New("invalid onion message")
+
+	// ErrBadOnionBlob is returned when we receive a bad onion blob within
+	// our onion message.
+	ErrBadOnionBlob = errors.New("invalid onion blob")
 )
 
 // Messenger houses the functionality to send and receive onion messages.
@@ -242,4 +257,56 @@ func customOnionMessage(peer route.Vertex) (*lndclient.CustomMessage, error) {
 		MsgType: lnwire.OnionMessageType,
 		Data:    buf.Bytes(),
 	}, nil
+}
+
+// processOnion is the function signature used to process onion packets.
+type processOnion func(onionPkt *sphinx.OnionPacket,
+	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error)
+
+// handleOnionMessage extracts onion messages from custom messages received from
+// lnd. A process onion closure is passed in for easy testing.
+func handleOnionMessage(processOnion processOnion,
+	msg lndclient.CustomMessage) error {
+
+	log.Infof("Received onion message from peer: %v", msg.Peer)
+
+	onionMsg := lnwire.OnionMessage{}
+	if err := onionMsg.Decode(bytes.NewBuffer(msg.Data), 0); err != nil {
+		return fmt.Errorf("%w: %v", ErrBadMessage, err)
+	}
+
+	// The onion blob portion of our message holds the actual onion.
+	onionPktBytes := bytes.NewBuffer(onionMsg.OnionBlob)
+
+	onionPkt := &sphinx.OnionPacket{}
+	if err := onionPkt.Decode(onionPktBytes); err != nil {
+		return fmt.Errorf("%w:%v", ErrBadOnionBlob, err)
+	}
+
+	processedPacket, err := processOnion(onionPkt, onionMsg.BlindingPoint)
+	if err != nil {
+		return fmt.Errorf("%w: could not process onion packet: %v",
+			ErrBadOnionBlob, err)
+	}
+
+	switch processedPacket.Action {
+	// If we're the exit node, this onion message was intended for us.
+	case sphinx.ExitNode:
+		log.Infof("Onion message from: %v is for us!", msg.Peer)
+
+		// TODO: handle processed packet's payload.
+		return nil
+
+	// We don't support forwarding at present, so we fail if an onion with
+	// more hops is received.
+	case sphinx.MoreHops:
+		return ErrNoForwarding
+
+	// If we encounter a sphinx failure, just log the error and ignore the
+	// packet.
+	case sphinx.Failure:
+		return ErrBadMessage
+	}
+
+	return nil
 }

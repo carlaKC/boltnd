@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightninglabs/lndclient"
@@ -271,4 +272,91 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 	// All of our errors are wrapped, so we can just check err.Is the
 	// error we expect (also works for nil).
 	require.True(t, errors.Is(err, testCase.expectedErr))
+}
+
+// TestHandleOnionMessage tests different handling cases for onion messages.
+func TestHandleOnionMessage(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 1)
+	nodeKey, err := route.NewVertexFromBytes(
+		pubkeys[0].SerializeCompressed(),
+	)
+	require.NoError(t, err, "pubkey")
+
+	// Create a single valid message that we can use across test cases.
+	msg, err := customOnionMessage(nodeKey)
+	require.NoError(t, err, "create msg")
+
+	mockErr := errors.New("mock err")
+
+	tests := []struct {
+		name         string
+		msg          lndclient.CustomMessage
+		processOnion processOnion
+		expectedErr  error
+	}{
+		// TODO: add coverage for decoding errors
+		{
+			name: "message for our node",
+			msg:  *msg,
+			// Return a packet indicating that we're the recipient.
+			processOnion: func(_ *sphinx.OnionPacket,
+				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
+				error) {
+
+				return &sphinx.ProcessedPacket{
+					Action: sphinx.ExitNode,
+				}, nil
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "message for forwarding",
+			msg:  *msg,
+			// Return a packet indicating that there are more hops.
+			processOnion: func(_ *sphinx.OnionPacket,
+				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
+				error) {
+
+				return &sphinx.ProcessedPacket{
+					Action: sphinx.MoreHops,
+				}, nil
+			},
+			expectedErr: ErrNoForwarding,
+		},
+		{
+			name: "invalid message",
+			msg:  *msg,
+			// Return a packet indicating that there are more hops.
+			processOnion: func(_ *sphinx.OnionPacket,
+				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
+				error) {
+
+				return &sphinx.ProcessedPacket{
+					Action: sphinx.Failure,
+				}, nil
+			},
+			expectedErr: ErrBadMessage,
+		},
+		{
+			name: "processing failed",
+			msg:  *msg,
+			// Fail onion processing.
+			processOnion: func(_ *sphinx.OnionPacket,
+				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
+				error) {
+
+				return nil, mockErr
+			},
+			expectedErr: ErrBadOnionBlob,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := handleOnionMessage(
+				testCase.processOnion, testCase.msg,
+			)
+			require.True(t, errors.Is(err, testCase.expectedErr))
+		})
+	}
 }
