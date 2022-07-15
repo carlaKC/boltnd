@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -28,6 +30,27 @@ var (
 	// ErrNoConnection is returned if we don't successfully connect to our
 	// peer within our set number of retries.
 	ErrNoConnection = errors.New("peer not connected within wait period")
+
+	// ErrNoForwarding is returned if we receive an onion message intended
+	// to be forwarded, but do not support forwarding.
+	ErrNoForwarding = errors.New("received onion message for forwarding, " +
+		"not supported")
+
+	// ErrBadMessage is returned when we can't process an onion message.
+	ErrBadMessage = errors.New("onion message processing failed")
+
+	// ErrBadOnionMsg is returned when we receive a bad onion message.
+	ErrBadOnionMsg = errors.New("invalid onion message")
+
+	// ErrBadOnionBlob is returned when we receive a bad onion blob within
+	// our onion message.
+	ErrBadOnionBlob = errors.New("invalid onion blob")
+
+	// ErrShuttingDown is returned when the messenger exits.
+	ErrShuttingDown = errors.New("messenger shutting down")
+
+	// ErrLNDShutdown is returned when lnd shuts down one of our streams.
+	ErrLNDShutdown = errors.New("lnd shutting down")
 )
 
 // Messenger houses the functionality to send and receive onion messages.
@@ -38,6 +61,9 @@ type Messenger struct {
 	// lnd provides the lnd apis required for onion messaging.
 	lnd LndOnionMsg
 
+	// router provides onion routing capabilities for the messenger.
+	router *sphinx.Router
+
 	// lookupPeerBackoff is the amount of time that we back off for when
 	// waiting to connect to a peer.
 	lookupPeerBackoff time.Duration
@@ -46,16 +72,26 @@ type Messenger struct {
 	// once connected.
 	lookupPeerAttempts int
 
+	// requestShutdown is called when the messenger experiences an error to
+	// signal to calling code that it should gracefully exit.
+	requestShutdown func(err error)
+
 	wg   sync.WaitGroup
 	quit chan struct{}
 }
 
 // NewOnionMessenger creates a new onion messenger.
-func NewOnionMessenger(lnd LndOnionMsg) *Messenger {
+func NewOnionMessenger(params *chaincfg.Params, lnd LndOnionMsg,
+	nodeKeyECDH sphinx.SingleKeyECDH, shutdown func(error)) *Messenger {
+
 	return &Messenger{
-		lnd:                lnd,
+		lnd: lnd,
+		router: sphinx.NewRouter(
+			nodeKeyECDH, params, sphinx.NewMemoryReplayLog(),
+		),
 		lookupPeerBackoff:  lookupPeerBackoffDefault,
 		lookupPeerAttempts: lookupPeerAttemptsDefault,
+		requestShutdown:    shutdown,
 		quit:               make(chan struct{}),
 	}
 }
@@ -67,6 +103,19 @@ func (m *Messenger) Start() error {
 	}
 
 	log.Info("Starting onion messenger")
+	if err := m.router.Start(); err != nil {
+		return fmt.Errorf("could not start router: %w", err)
+	}
+
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+
+		err := m.receiveOnionMessages(context.Background())
+		if err != nil && err != ErrShuttingDown {
+			m.requestShutdown(err)
+		}
+	}()
 
 	return nil
 }
@@ -83,6 +132,11 @@ func (m *Messenger) Stop() error {
 	// Signal our goroutines to quit and wait for them to exit.
 	close(m.quit)
 	m.wg.Wait()
+
+	// Shutdown our onion router. We do this after shutting down goroutines
+	// so that any errors due to a stopped router don't error-out before we
+	// can cleanly shut down.
+	m.router.Stop()
 
 	return nil
 }
@@ -219,4 +273,146 @@ func customOnionMessage(peer route.Vertex) (*lndclient.CustomMessage, error) {
 		MsgType: lnwire.OnionMessageType,
 		Data:    buf.Bytes(),
 	}, nil
+}
+
+// receiveOnionMessages consumes onion messages from lnd's custom message
+// stream and handles them.
+func (m *Messenger) receiveOnionMessages(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	msgChan, errChan, err := m.lnd.SubscribeCustomMessages(ctx)
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case msg, ok := <-msgChan:
+			// If our message channel has been closed, the stream
+			// has exited.
+			if !ok {
+				return fmt.Errorf("%w: messages", ErrLNDShutdown)
+			}
+
+			// Skip over all non-onion messages.
+			if msg.MsgType != lnwire.OnionMessageType {
+				continue
+			}
+
+			// Just log failures for individual onion messages,
+			// since we don't want one malformed message to send
+			// us down.
+			err := handleOnionMessage(m.processOnion, msg)
+			if err == nil {
+				continue
+			}
+
+			// Try to unwrap our error to match it against our
+			// various typed errors. If the error is not wrapped,
+			// Unwrap will return nil, in which case we match
+			// against the original error.
+			upwrappedErr := errors.Unwrap(err)
+			if upwrappedErr == nil {
+				upwrappedErr = err
+			}
+
+			// Handle the non-nil error accordingly, we've already
+			// managed the nil case above.
+			switch upwrappedErr {
+			// Log that we're dropping the message if it's supposed
+			// to be forwarded (not supported at present).
+			case ErrNoForwarding:
+				log.Infof("Received onion message with more "+
+					"hops from: %v forwarding not "+
+					"supported, dropping message", msg.Peer)
+
+			// Don't error out on invalid messages (it allows peers
+			// to send us junk to shut us down), just log.
+			// TODO: possibly penalize bad messages in future?
+			case ErrBadMessage, ErrBadOnionMsg, ErrBadOnionBlob:
+				log.Errorf("Processing failed for onion "+
+					"packet from: %v: %v", msg.Peer, err)
+
+			// Log any other errors, since a single bad message
+			// should not shut us down.
+			default:
+				log.Errorf("Onion message from: %v failed: %v",
+					msg.Peer, err)
+			}
+
+		case err, ok := <-errChan:
+			// If our error channel has been closed, the stream
+			// has exited.
+			if !ok {
+				return fmt.Errorf("%w: message errors",
+					ErrLNDShutdown)
+			}
+
+			return fmt.Errorf("message subscription failed: %w",
+				err)
+
+		case <-m.quit:
+			return ErrShuttingDown
+		}
+	}
+}
+
+// processOnion uses the messenger's router to process onion messages.
+func (m *Messenger) processOnion(onionPkt *sphinx.OnionPacket,
+	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error) {
+
+	return m.router.ProcessOnionPacket(onionPkt, nil, 0, blindingPoint)
+}
+
+// processOnion is the function signature used to process onion packets.
+type processOnion func(onionPkt *sphinx.OnionPacket,
+	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error)
+
+// handleOnionMessage extracts onion messages from custom messages received from
+// lnd. A process onion closure is passed in for easy testing.
+func handleOnionMessage(processOnion processOnion,
+	msg lndclient.CustomMessage) error {
+
+	log.Infof("Received onion message from peer: %v", msg.Peer)
+
+	onionMsg := lnwire.OnionMessage{}
+	if err := onionMsg.Decode(bytes.NewBuffer(msg.Data), 0); err != nil {
+		return fmt.Errorf("%w: %v", ErrBadMessage, err)
+	}
+
+	// The onion blob portion of our message holds the actual onion.
+	onionPktBytes := bytes.NewBuffer(onionMsg.OnionBlob)
+
+	onionPkt := &sphinx.OnionPacket{}
+	if err := onionPkt.Decode(onionPktBytes); err != nil {
+		return fmt.Errorf("%w:%v", ErrBadOnionBlob, err)
+	}
+
+	processedPacket, err := processOnion(onionPkt, onionMsg.BlindingPoint)
+	if err != nil {
+		return fmt.Errorf("%w: could not process onion packet: %v",
+			ErrBadOnionBlob, err)
+	}
+
+	switch processedPacket.Action {
+	// If we're the exit node, this onion message was intended for us.
+	case sphinx.ExitNode:
+		log.Infof("Onion message from: %v is for us!", msg.Peer)
+
+		// TODO: handle processed packet's payload.
+		return nil
+
+	// We don't support forwarding at present, so we fail if an onion with
+	// more hops is received.
+	case sphinx.MoreHops:
+		return ErrNoForwarding
+
+	// If we encounter a sphinx failure, just log the error and ignore the
+	// packet.
+	case sphinx.Failure:
+		return ErrBadMessage
+	}
+
+	return nil
 }

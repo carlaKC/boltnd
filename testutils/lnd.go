@@ -3,7 +3,9 @@ package testutils
 import (
 	"context"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
 )
@@ -38,6 +40,31 @@ func MockSendAnyCustomMessage(m *mock.Mock, err error) {
 		mock.AnythingOfType("lndclient.CustomMessage"),
 	).Once().Return(
 		err,
+	)
+}
+
+// SubscribeCustomMessages mocks subscribing to custom messages from lnd.
+func (m *MockLND) SubscribeCustomMessages(ctx context.Context) (
+	<-chan lndclient.CustomMessage, <-chan error, error) {
+
+	args := m.Mock.MethodCalled("SubscribeCustomMessages", ctx)
+
+	msgChan := args.Get(0).(<-chan lndclient.CustomMessage)
+	errChan := args.Get(1).(<-chan error)
+
+	return msgChan, errChan, args.Error(2)
+}
+
+// MockSubscribeCustomMessages primes our mock to return the channels and error
+// provided when we subscribe to custom messages.
+func MockSubscribeCustomMessages(m *mock.Mock,
+	msgChan <-chan lndclient.CustomMessage, errChan <-chan error,
+	err error) {
+
+	m.On(
+		"SubscribeCustomMessages", mock.Anything,
+	).Once().Return(
+		msgChan, errChan, err,
 	)
 }
 
@@ -100,5 +127,48 @@ func MockConnect(m *mock.Mock, peer route.Vertex, host string, perm bool,
 		"Connect", mock.Anything, peer, host, perm,
 	).Once().Return(
 		err,
+	)
+}
+
+// GetInfo mocks a call to lnd's getinfo.
+func (m *MockLND) GetInfo(ctx context.Context) (*lndclient.Info, error) {
+	args := m.Mock.MethodCalled("GetInfo", ctx)
+
+	return args.Get(0).(*lndclient.Info), args.Error(1)
+}
+
+// MockGetInfo primes our mock to return the info and error provided when
+// GetInfo is called.
+func MockGetInfo(m *mock.Mock, info *lndclient.Info, err error) {
+	m.On(
+		"GetInfo", mock.Anything,
+	).Once().Return(
+		info, err,
+	)
+}
+
+// DeriveSharedKey mocks lnd's ECDH operations.
+func (m *MockLND) DeriveSharedKey(ctx context.Context,
+	ephemeralPubKey *btcec.PublicKey, keyLocator *keychain.KeyLocator) (
+	[32]byte, error) {
+
+	args := m.Mock.MethodCalled(
+		"DeriveSharedKey", ctx, ephemeralPubKey, keyLocator,
+	)
+
+	key := args.Get(0).([32]byte)
+
+	return key, args.Error(1)
+}
+
+// MockDeriveSharedKey primes our mock to return the key and error provided
+// when derive shared key is called.
+func MockDeriveSharedKey(m *mock.Mock, ephemeral *btcec.PublicKey,
+	locator *keychain.KeyLocator, key [32]byte, err error) {
+
+	m.On(
+		"DeriveSharedKey", mock.Anything, ephemeral, locator,
+	).Once().Return(
+		key, err,
 	)
 }

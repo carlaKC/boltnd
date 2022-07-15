@@ -45,15 +45,17 @@ func NewBoltnd(opts ...ConfigOption) (*Boltnd, error) {
 
 	setupLoggers(cfg)
 
-	rpcserver, err := rpcserver.NewServer()
+	impl := &Boltnd{
+		cfg: cfg,
+	}
+
+	var err error
+	impl.rpcServer, err = rpcserver.NewServer(impl.requestShutdown)
 	if err != nil {
 		return nil, fmt.Errorf("could not create rpcserver: %v", err)
 	}
 
-	return &Boltnd{
-		rpcServer: rpcserver,
-		cfg:       cfg,
-	}, nil
+	return impl, nil
 }
 
 // Start starts the boltnd implementation.
@@ -116,13 +118,13 @@ func (b *Boltnd) Stop() error {
 }
 
 // requestShutdown calls our graceful shutdown closure, if supplied.
-func (b *Boltnd) requestShutdown() { // nolint: unused
+func (b *Boltnd) requestShutdown(err error) {
 	if b.cfg.RequestShutdown == nil {
-		log.Info("No graceful shutdown closure provided")
+		log.Infof("No graceful shutdown closure provided: %v", err)
 		return
 	}
 
-	log.Info("Requesting graceful shutdown")
+	log.Infof("Requesting graceful shutdown: %v", err)
 	b.cfg.RequestShutdown()
 }
 

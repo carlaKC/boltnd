@@ -37,13 +37,18 @@ type Server struct {
 	// Start().
 	ready chan (struct{})
 
+	// requestShutdown is called when the messenger experiences an error to
+	// signal to calling code that it should gracefully exit.
+	requestShutdown func(err error)
+
 	offersrpc.UnimplementedOffersServer
 }
 
 // NewServer creates an offers server.
-func NewServer() (*Server, error) {
+func NewServer(shutdown func(error)) (*Server, error) {
 	return &Server{
-		ready: make(chan struct{}),
+		ready:           make(chan struct{}),
+		requestShutdown: shutdown,
 	}, nil
 }
 
@@ -55,7 +60,22 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 
 	log.Info("Starting rpc server")
 	s.lnd = lnd
-	s.onionMsgr = onionmsg.NewOnionMessenger(lnd.Client)
+
+	// Setup a router that our onion messenger can use, utilizing a
+	// signer that calls lnd's apis for cyrptographic operations.
+	nodeKeyECDH, err := onionmsg.NewNodeECDH(lnd.Client, lnd.Signer)
+	if err != nil {
+		return fmt.Errorf("could not create router signer: %w", err)
+	}
+
+	// Finally setup an onion messenger using the onion router.
+	s.onionMsgr = onionmsg.NewOnionMessenger(
+		lnd.ChainParams, lnd.Client, nodeKeyECDH, s.requestShutdown,
+	)
+
+	if err := s.onionMsgr.Start(); err != nil {
+		return fmt.Errorf("could not start onion messenger: %w", err)
+	}
 
 	close(s.ready)
 
@@ -71,6 +91,13 @@ func (s *Server) Stop() error {
 	log.Info("Stopping rpc server")
 	defer log.Info("Stopped rpc server")
 
+	// Shut down onion messenger if non-nil.
+	if s.onionMsgr != nil {
+		if err := s.onionMsgr.Stop(); err != nil {
+			return fmt.Errorf("could not stop onion messenger: %w",
+				err)
+		}
+	}
 	return nil
 }
 

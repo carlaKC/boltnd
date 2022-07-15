@@ -3,7 +3,9 @@ package onionmsg
 import (
 	"context"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -12,6 +14,11 @@ import (
 type LndOnionMsg interface {
 	// SendCustomMessage sends a custom message to a peer.
 	SendCustomMessage(ctx context.Context, msg lndclient.CustomMessage) error
+
+	// SubscribeCustomMessages subscribes to custom messages received by
+	// lnd.
+	SubscribeCustomMessages(ctx context.Context) (
+		<-chan lndclient.CustomMessage, <-chan error, error)
 
 	// GetNodeInfo looks up a node in the public ln graph.
 	GetNodeInfo(ctx context.Context, pubkey route.Vertex,
@@ -23,11 +30,31 @@ type LndOnionMsg interface {
 	// Connect makes a connection to the peer provided.
 	Connect(ctx context.Context, peer route.Vertex, host string,
 		permanent bool) error
+
+	// GetInfo returns information about the lnd node.
+	GetInfo(ctx context.Context) (*lndclient.Info, error)
+}
+
+// LndOnionSigner is an interface describing the lnd dependencies required for
+// the onion messenger's cryptographic operations.
+type LndOnionSigner interface {
+	// DeriveSharedKey returns a shared secret key by performing
+	// Diffie-Hellman key derivation between the ephemeral public key and
+	// the key specified by the key locator (or the node's identity private
+	// key if no key locator is specified)
+	DeriveSharedKey(ctx context.Context, ephemeralPubKey *btcec.PublicKey,
+		keyLocator *keychain.KeyLocator) ([32]byte, error)
 }
 
 // OnionMessenger is an interface implemented by objects that can send and
 // receive onion messages.
 type OnionMessenger interface {
+	// Start the onion messenger.
+	Start() error
+
+	// Stop the onion messenger, blocking until all goroutines exit.
+	Stop() error
+
 	// SendMessage sends an onion message to the peer specified.
 	SendMessage(ctx context.Context, peer route.Vertex) error
 }
