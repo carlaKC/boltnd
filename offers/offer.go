@@ -2,6 +2,8 @@ package offers
 
 import (
 	"bytes"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -43,6 +45,35 @@ const (
 
 	// signatureType is a record for a bip40 signature over the offer.
 	signatureType tlv.Type = 240
+)
+
+var (
+	// lightningTag is the top level tag used to tag signatures on offers.
+	lightningTag = []byte("lightning")
+
+	// offerTag is the message tag used to tag signatures on offers.
+	offerTag = []byte("offer")
+
+	// signatureTag is the field tag used to tag signatures (TLV type= 240)
+	// for offers.
+	signatureTag = []byte("signature")
+
+	// ErrNodeIDRequired is returned when a node pubkey is not provided
+	// for an offer. Note that when blinded paths are supported, we can
+	// relax this requirement.
+	ErrNodeIDRequired = errors.New("node pubkey required for offer")
+
+	// ErrQuantityRange is returned when we get an min/max quantity range
+	// with min > max, which does not make sense.
+	ErrQuantityRange = errors.New("invalid quantity range")
+
+	// ErrDescriptionRequried is returned when an offer is invalid because
+	//  does not contain a description.
+	ErrDescriptionRequried = errors.New("offer description required")
+
+	// ErrInvalidOfferSig is returned when the signature for an offer is
+	// invalid for the merkle root we have calculated.
+	ErrInvalidOfferSig = errors.New("invalid offer signature")
 )
 
 // Offer represents a bolt 12 offer.
@@ -165,6 +196,89 @@ func (o *Offer) records() ([]tlv.Record, error) {
 	}
 
 	return records, nil
+}
+
+// signatureDigest returns the tagged merkle root that is used for offer
+// signatures.
+func signatureDigest(messageTag, fieldTag []byte,
+	root chainhash.Hash) chainhash.Hash {
+
+	// The tag has the following format:
+	// lightning || message tag || field tag
+	tags := [][]byte{
+		lightningTag, messageTag, fieldTag,
+	}
+
+	// Create a tagged hash with the merkle root.
+	digest := chainhash.TaggedHash(
+		bytes.Join(tags, []byte{}), root[:],
+	)
+
+	return *digest
+}
+
+// Validate performs the validation outlined in the specification for offers.
+func (o *Offer) Validate() error {
+	// At present, we only support offers that contain node IDs because
+	// support for blinded paths has not been added.
+	//
+	// The spec notes "if it sets a node ID ... otherwise MUST provide at
+	// least one blinded path".
+	// TODO - expand validation once blinded paths are added.
+	if o.NodeID == nil {
+		return ErrNodeIDRequired
+	}
+
+	if o.Description == "" {
+		return ErrDescriptionRequried
+	}
+
+	var (
+		minQuantitySet = o.QuantityMin != 0
+		maxQuantitySet = o.QuantityMax != 0
+	)
+
+	// If we have values for both, enforce max > min.
+	if minQuantitySet && maxQuantitySet && o.QuantityMin > o.QuantityMax {
+		return fmt.Errorf("min: %v > max: %v quantity, %w",
+			o.QuantityMin, o.QuantityMax, ErrQuantityRange)
+	}
+
+	// Check that our signature is a valid signature of the merkle root for
+	// the offer.
+	if o.Signature != nil {
+		sigDigest := signatureDigest(
+			offerTag, signatureTag, o.MerkleRoot,
+		)
+
+		if err := validateSignature(
+			*o.Signature, o.NodeID, sigDigest[:],
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateSignature(signature [64]byte, nodeID *btcec.PublicKey,
+	digest []byte) error {
+
+	sig, err := schnorr.ParseSignature(signature[:])
+	if err != nil {
+		return fmt.Errorf("invalid signature: %v: %w",
+			hex.EncodeToString(signature[:]), err)
+	}
+
+	if !sig.Verify(digest, nodeID) {
+		return fmt.Errorf("%w: %v for: %v from: %v", ErrInvalidOfferSig,
+			hex.EncodeToString(signature[:]),
+			hex.EncodeToString(digest),
+			hex.EncodeToString(schnorr.SerializePubKey(nodeID)),
+		)
+	}
+
+	return nil
 }
 
 // encodeTU64 encodes a truncated uint64 tlv.

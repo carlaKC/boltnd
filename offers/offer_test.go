@@ -1,6 +1,7 @@
 package offers
 
 import (
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -153,4 +154,109 @@ func TestDecodedMerkleRoot(t *testing.T) {
 	require.NoError(t, err, "decode")
 
 	require.Equal(t, *merkleRoot, decodedOffer.MerkleRoot)
+}
+
+// TestOfferValidation tests validation of offers.
+func TestOfferValidation(t *testing.T) {
+	privkey := testutils.GetPrivkeys(t, 1)
+	nodePrivKey := privkey[0]
+	nodePubkey := nodePrivKey.PubKey()
+
+	// Create a mock merkle root and sign it.
+	rootBytes := [32]byte{1, 2, 3}
+	root, err := chainhash.NewHash(rootBytes[:])
+	require.NoError(t, err, "merkle root")
+
+	digest := signatureDigest(
+		offerTag, signatureTag, *root,
+	)
+
+	sig, err := schnorr.Sign(nodePrivKey, digest[:])
+	require.NoError(t, err, "sign root")
+
+	// Serialized our signature and copy into [64]byte.
+	sigBytes := sig.Serialize()
+	var schnorrSig [64]byte
+	copy(schnorrSig[:], sigBytes)
+
+	// Create another merkle root that won't match our signature to test
+	// bad sigs.
+	badRootBytes := [32]byte{1, 2, 3, 4}
+	badRoot, err := chainhash.NewHash(badRootBytes[:])
+	require.NoError(t, err, "bad merkle root")
+
+	tests := []struct {
+		name  string
+		offer *Offer
+		err   error
+	}{
+		{
+			name:  "no node ID",
+			offer: &Offer{},
+			err:   ErrNodeIDRequired,
+		},
+		{
+			name: "no description",
+			offer: &Offer{
+				NodeID: nodePubkey,
+			},
+			err: ErrDescriptionRequried,
+		},
+		{
+			name: "min > max",
+			offer: &Offer{
+				NodeID:      nodePubkey,
+				Description: " ",
+				QuantityMin: 3,
+				QuantityMax: 1,
+			},
+			err: ErrQuantityRange,
+		},
+		{
+			name: "valid - with quantity",
+			offer: &Offer{
+				NodeID:      nodePubkey,
+				Description: " ",
+				QuantityMin: 1,
+				QuantityMax: 2,
+			},
+			err: nil,
+		},
+		{
+			name: "valid - no quantity",
+			offer: &Offer{
+				NodeID:      nodePubkey,
+				Description: " ",
+			},
+			err: nil,
+		},
+		{
+			name: "valid - signature good",
+			offer: &Offer{
+				NodeID:      nodePubkey,
+				Description: " ",
+				Signature:   &schnorrSig,
+				MerkleRoot:  *root,
+			},
+		},
+		{
+			name: "invalid - signature bad",
+			offer: &Offer{
+				NodeID:      nodePubkey,
+				Description: " ",
+				Signature:   &schnorrSig,
+				MerkleRoot:  *badRoot,
+			},
+			err: ErrInvalidOfferSig,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.offer.Validate()
+			require.True(t, errors.Is(err, testCase.err))
+		})
+	}
 }
