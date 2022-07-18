@@ -74,6 +74,14 @@ var (
 	// ErrInvalidOfferSig is returned when the signature for an offer is
 	// invalid for the merkle root we have calculated.
 	ErrInvalidOfferSig = errors.New("invalid offer signature")
+
+	// ErrInvalidOfferStr is returned when we fail to decode a bech32
+	// encoded offer string.
+	ErrInvalidOfferStr = errors.New("invalid offer string")
+
+	// ErrBadHRP is returned when an offer string has the wrong bech32
+	// human readable prefix.
+	ErrBadHRP = fmt.Errorf("incorrect bech32 hrp, should be: %v", offerHRP)
 )
 
 // Offer represents a bolt 12 offer.

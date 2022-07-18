@@ -1,11 +1,26 @@
 package offers
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
 
-const charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+const (
+	charset  = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+	offerHRP = "lno"
+)
+
+var (
+	// ErrIncorrectSplit is returned when an offer string contains "+"
+	// joins that are incorrectly placed - either consecutive, or starting/
+	// ending the offers string
+	ErrIncorrectSplit = errors.New("consecutive, prefix or suffix + invalid")
+
+	// ErrNotInCharset is returned when a character in an offer string is
+	// not part of our charset.
+	ErrNotInCharset = errors.New("invalid character, not in charset")
+)
 
 // decodeBech32 decodes a bech32 encoded string, returning the human-readable
 // part and the data. This function does not expect a checksum to be included.
@@ -27,12 +42,10 @@ func decodeBech32(bech string) (string, []byte, error) {
 		return "", nil, fmt.Errorf("invalid bech32 string length %d",
 			len(bech))
 	}
+
 	// Only	ASCII characters between 33 and 126 are allowed.
-	for i := 0; i < len(bech); i++ {
-		if bech[i] < 33 || bech[i] > 126 {
-			return "", nil, fmt.Errorf("invalid character in "+
-				"string: '%c'", bech[i])
-		}
+	if err := checkASCII(bech); err != nil {
+		return "", nil, err
 	}
 
 	// The characters must be either all lowercase or all uppercase.
@@ -72,6 +85,19 @@ func decodeBech32(bech string) (string, []byte, error) {
 	return hrp, decoded[:], nil
 }
 
+// checkASCII checks that only ASCII characters between 33 and 126 are in a
+// string.
+func checkASCII(str string) error {
+	for i := 0; i < len(str); i++ {
+		if str[i] < 33 || str[i] > 126 {
+			return fmt.Errorf("invalid character in "+
+				"string: '%c'", str[i])
+		}
+	}
+
+	return nil
+}
+
 // toBytes converts each character in the string 'chars' to the value of the
 // index of the corresponding character in 'charset'.
 func toBytes(chars string) ([]byte, error) {
@@ -79,10 +105,38 @@ func toBytes(chars string) ([]byte, error) {
 	for i := 0; i < len(chars); i++ {
 		index := strings.IndexByte(charset, chars[i])
 		if index < 0 {
-			return nil, fmt.Errorf("invalid character not part of "+
-				"charset: %v", chars[i])
+			return nil, fmt.Errorf("%w: %v", ErrNotInCharset,
+				chars[i])
 		}
 		decoded = append(decoded, byte(index))
 	}
 	return decoded, nil
+}
+
+// stripOffer strips out any allowed "+" characters, validating that they are
+// surrounded by bech32 characters. The offer string with the "+" characters
+// removed is returned.
+func stripOffer(offer string) (string, error) {
+	parts := strings.Split(offer, "+")
+
+	for i, part := range parts {
+		// If any of our parts are empty, we either had consecutive or
+		// starting / ending "+" in our string.
+		if part == "" {
+			return "", ErrIncorrectSplit
+		}
+
+		// We should allow whitespace following a "+" character. Trim
+		// all whitespace so that we can check that except for spaces,
+		// all other characters are bech32. We replace the entry in our
+		// slice to strip out these paces.
+		parts[i] = strings.TrimSpace(part)
+
+		// Check that each split is in our charset.
+		if err := checkASCII(parts[i]); err != nil {
+			return "", fmt.Errorf("%w: part: %v", err, part)
+		}
+	}
+
+	return strings.Join(parts, ""), nil
 }
