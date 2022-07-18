@@ -7,6 +7,8 @@ option go_package = "github.com/carlakc/boltnd/offersrpc";
 service Offers {
     rpc SendOnionMessage (SendOnionMessageRequest)
         returns (SendOnionMessageResponse);
+
+    rpc DecodeOffer (DecodeOfferRequest) returns (DecodeOfferResponse);
 }
 
 message SendOnionMessageRequest {
@@ -21,4 +23,46 @@ message SendOnionMessageRequest {
 }
 
 message SendOnionMessageResponse {
+}
+
+message DecodeOfferRequest {
+    // The encoded offer string to be decoded.
+    string offer = 1;
+}
+
+message DecodeOfferResponse {
+    // The decoded offer.
+    Offer offer = 1;
+}
+
+message Offer {
+    // Minimum amount is the minimum payment amount that the offer is for,
+    // expressed in millisatoshis.
+    uint64 min_amount_msat = 1;
+
+    // The description of what the offer is for.
+    string description = 2;
+
+    // The BOLT feature vector for the offers, encoded as a bit vector.
+    bytes features = 3;
+
+    // The expiry time for the offer, expressed as seconds from the unix epoch.
+    uint64 expiry_unix_seconds = 4;
+
+    // The issuer of the offer.
+    string issuer = 5;
+
+    // The minimum number of items for the offer.
+    uint64 min_quantity = 6;
+
+    // The maximum number of items for the offer.
+    uint64 max_quantity = 7;
+
+    // The hex-encoded node ID of the party making the offer, expressed in
+    // x-only format.
+    string node_id = 8;
+
+    // The 64 byte bip340 hex-encoded signature for the offer, generated using
+    // node_id's corresponding private key.
+    string signature = 9;
 }

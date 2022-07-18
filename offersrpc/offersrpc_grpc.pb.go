@@ -19,6 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type OffersClient interface {
 	SendOnionMessage(ctx context.Context, in *SendOnionMessageRequest, opts ...grpc.CallOption) (*SendOnionMessageResponse, error)
+	DecodeOffer(ctx context.Context, in *DecodeOfferRequest, opts ...grpc.CallOption) (*DecodeOfferResponse, error)
 }
 
 type offersClient struct {
@@ -38,11 +39,21 @@ func (c *offersClient) SendOnionMessage(ctx context.Context, in *SendOnionMessag
 	return out, nil
 }
 
+func (c *offersClient) DecodeOffer(ctx context.Context, in *DecodeOfferRequest, opts ...grpc.CallOption) (*DecodeOfferResponse, error) {
+	out := new(DecodeOfferResponse)
+	err := c.cc.Invoke(ctx, "/offersrpc.Offers/DecodeOffer", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OffersServer is the server API for Offers service.
 // All implementations must embed UnimplementedOffersServer
 // for forward compatibility
 type OffersServer interface {
 	SendOnionMessage(context.Context, *SendOnionMessageRequest) (*SendOnionMessageResponse, error)
+	DecodeOffer(context.Context, *DecodeOfferRequest) (*DecodeOfferResponse, error)
 	mustEmbedUnimplementedOffersServer()
 }
 
@@ -52,6 +63,9 @@ type UnimplementedOffersServer struct {
 
 func (UnimplementedOffersServer) SendOnionMessage(context.Context, *SendOnionMessageRequest) (*SendOnionMessageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendOnionMessage not implemented")
+}
+func (UnimplementedOffersServer) DecodeOffer(context.Context, *DecodeOfferRequest) (*DecodeOfferResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DecodeOffer not implemented")
 }
 func (UnimplementedOffersServer) mustEmbedUnimplementedOffersServer() {}
 
@@ -84,6 +98,24 @@ func _Offers_SendOnionMessage_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Offers_DecodeOffer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecodeOfferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OffersServer).DecodeOffer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/offersrpc.Offers/DecodeOffer",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OffersServer).DecodeOffer(ctx, req.(*DecodeOfferRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Offers_ServiceDesc is the grpc.ServiceDesc for Offers service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -94,6 +126,10 @@ var Offers_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendOnionMessage",
 			Handler:    _Offers_SendOnionMessage_Handler,
+		},
+		{
+			MethodName: "DecodeOffer",
+			Handler:    _Offers_DecodeOffer_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
