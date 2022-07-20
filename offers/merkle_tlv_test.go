@@ -2,6 +2,7 @@ package offers
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -204,6 +205,96 @@ func TestOrderNodes(t *testing.T) {
 
 			require.Equal(t, testCase.expectedLeft, actualLeft)
 			require.Equal(t, testCase.expectedRight, actualRight)
+		})
+	}
+}
+
+// TestCreateBranches tests creating the initial set of branches from our node
+// leaves.
+func TestCreateBranches(t *testing.T) {
+	var (
+		// Create some leaves to use as input. Since leaves are ordered
+		// by TaggedHash, the values were pre-computed for this test to
+		// figure out what ordering we'll have.
+
+		// Precomputed TaggedHash()
+		// 723ccb853bd6827ed49025180a48c6e4acce9995168d49a0872e50ac1a98b06d
+		leaf1 = &TLVLeaf{
+			Value: []byte{1},
+		}
+		leaf1Hash = leaf1.TaggedHash()
+
+		// Precomputed TaggedHash()
+		// b6840751cf95ef9997aa6b2f84c8cdb1576dc83a806b62fd0e0ce1ab718d64e4
+		leaf2 = &TLVLeaf{
+			Value: []byte{2},
+		}
+		leaf2Hash = leaf2.TaggedHash()
+
+		// Precomputed TaggedHash()
+		// 213dbeafa47125ba515b9efe99334ceda5d3f75d4b4b48c4aa1fa6d704abfc18
+		leaf3 = &TLVLeaf{
+			Value: []byte{3},
+		}
+		leaf3Hash = leaf3.TaggedHash()
+
+		// Precomputed TaggedHash()
+		// 213dbeafa47125ba515b9efe99334ceda5d3f75d4b4b48c4aa1fa6d704abfc18
+		leaf4 = &TLVLeaf{
+			Value: []byte{3},
+		}
+		leaf4Hash = leaf4.TaggedHash()
+	)
+
+	// Assert that the ordering we expect for our tagged hash values is
+	// as expected:
+	//
+	// leaf1 < leaf2
+	require.Equal(t, -1, bytes.Compare(leaf1Hash[:], leaf2Hash[:]))
+
+	// leaf3 = leaf4
+	require.Equal(t, 0, bytes.Compare(leaf3Hash[:], leaf4Hash[:]))
+
+	tests := []struct {
+		name     string
+		leaves   []*TLVLeaf
+		expected []*TLVBranch
+		err      error
+	}{
+		{
+			name: "odd leaf count",
+			leaves: []*TLVLeaf{
+				leaf1, leaf2, leaf3,
+			},
+			err: ErrOddLeafNodes,
+		},
+		{
+			name: "leaves need ordering",
+			leaves: []*TLVLeaf{
+				// Leaf1's hash is less than leaf2, so they
+				// should be switched.
+				leaf2, leaf1, leaf3, leaf4,
+			},
+			expected: []*TLVBranch{
+				&TLVBranch{
+					left:  leaf1.TaggedHash(),
+					right: leaf2.TaggedHash(),
+				},
+				&TLVBranch{
+					left:  leaf3.TaggedHash(),
+					right: leaf4.TaggedHash(),
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			actual, err := CreateTLVBranches(testCase.leaves)
+			require.True(t, errors.Is(err, testCase.err))
+			require.Equal(t, testCase.expected, actual)
 		})
 	}
 }

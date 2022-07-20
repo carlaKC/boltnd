@@ -2,6 +2,7 @@ package offers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -22,6 +23,15 @@ var (
 
 	// NonceTag is the tag used for nodes containing TLV nonces.
 	NonceTag = []byte("LnAll")
+
+	// BranchTag is the tag for intermediate branches.
+	BranchTag = []byte("LnBranch")
+
+	// ErrOddLeafNodes is returned if an attempt to create our first
+	// level of branches is made with an odd number of leaves. Since each
+	// TLV is matched with a nonce leaf in this construction, there should
+	// always be an even number of leaves.
+	ErrOddLeafNodes = errors.New("even number of leaf nodes expected")
 )
 
 // tlvEncode is the function signature used to encode TLV records.
@@ -49,6 +59,22 @@ func orderNodes(left, right node) (chainhash.Hash, chainhash.Hash) {
 	return leftHash, rightHash
 }
 
+// TLVBranch represents inner branch nodes in a tlv merkle tree.
+type TLVBranch struct {
+	right chainhash.Hash
+	left  chainhash.Hash
+}
+
+// TaggedHash produces a tagged hash for the branch, as defined by:
+// H(tag, msg) = sha256(sha256(tag) || sha256(tag) || msg)
+// TaggedHash = H("LnBranch" , left || right)
+//
+// Note that this function assumes that left <= right
+func (t *TLVBranch) TaggedHash() chainhash.Hash {
+	msg := append(t.left[:], t.right[:]...)
+	return *chainhash.TaggedHash(BranchTag, msg)
+}
+
 // TLVLeaf represents a leaf in our offer merkle tree.
 type TLVLeaf struct {
 	// Tag is the tag to be used when hashing the value into a node.
@@ -69,6 +95,34 @@ var _ node = (*TLVLeaf)(nil)
 // reversed hash (and the spec test vectors aren't reversed).
 func (t *TLVLeaf) TaggedHash() chainhash.Hash {
 	return *chainhash.TaggedHash(t.Tag, t.Value)
+}
+
+// CreateTLVBranches creates a set of branches from an initial set of leaves.
+func CreateTLVBranches(leaves []*TLVLeaf) ([]*TLVBranch, error) {
+	if len(leaves)%2 != 0 {
+		return nil, fmt.Errorf("%w: %v leaves", ErrOddLeafNodes,
+			len(leaves))
+	}
+
+	branches := make([]*TLVBranch, 0, len(leaves)/2)
+
+	// Iterate through our leaves two at a time (tlv/node leaf). Since we've
+	// already checked that we have an even number of leaves above, we don't
+	// need to check for the case where we have one lingering leaf
+	// remaining.
+	for i := 0; i < len(leaves); i += 2 {
+		// Hash the next two leaves, ordering them correctly (by hash).
+		left, right := orderNodes(leaves[i], leaves[i+1])
+
+		branch := &TLVBranch{
+			left:  left,
+			right: right,
+		}
+
+		branches = append(branches, branch)
+	}
+
+	return branches, nil
 }
 
 // CreateTLVLeaves creates a set of merkle leaves for a set of offer TLV
