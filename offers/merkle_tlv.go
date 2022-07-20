@@ -128,3 +128,27 @@ func isSignatureTLV(record tlv.Record) bool {
 	return tlvType >= signatureFieldStart &&
 		tlvType <= signatureFieldEnd
 }
+
+// encodeTLV serialized a record in our typical type / length / value format.
+func encodeTLV(record tlv.Record, b [8]byte) ([]byte, error) {
+	w := new(bytes.Buffer)
+
+	err := tlv.WriteVarInt(w, uint64(record.Type()), &b)
+	if err != nil {
+		return nil, fmt.Errorf("encode type: %w", err)
+	}
+
+	// Write the record’s length as a varint.
+	err = tlv.WriteVarInt(w, record.Size(), &b)
+	if err != nil {
+		return nil, fmt.Errorf("encode length: %w", err)
+	}
+
+	// Encode the current record’s value.
+	err = record.Encode(w)
+	if err != nil {
+		return nil, fmt.Errorf("encode value: %w", err)
+	}
+
+	return w.Bytes(), nil
+}
