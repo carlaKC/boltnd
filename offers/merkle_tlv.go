@@ -1,6 +1,7 @@
 package offers
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -26,6 +27,28 @@ var (
 // tlvEncode is the function signature used to encode TLV records.
 type tlvEncode func(record tlv.Record, b [8]byte) ([]byte, error)
 
+// node is an interface implemented by nodes in our offer tlv merkle tree.
+type node interface {
+	// TaggedHash produces the appropriate tagged hash for the level of
+	// the tree.
+	TaggedHash() chainhash.Hash
+}
+
+// orderNodes takes a left and right node that can be hashed into our tree
+// and returned the sorted value of their hashes for combination in the next
+// level of the tree.
+func orderNodes(left, right node) (chainhash.Hash, chainhash.Hash) {
+	leftHash, rightHash := left.TaggedHash(), right.TaggedHash()
+
+	// If left > right hash, then we switch the ordering so that the left
+	// hash is the lesser hash.
+	if bytes.Compare(leftHash[:], rightHash[:]) > 0 {
+		return rightHash, leftHash
+	}
+
+	return leftHash, rightHash
+}
+
 // TLVLeaf represents a leaf in our offer merkle tree.
 type TLVLeaf struct {
 	// Tag is the tag to be used when hashing the value into a node.
@@ -34,6 +57,9 @@ type TLVLeaf struct {
 	// Value is the value contained in the leaf.
 	Value []byte
 }
+
+// Compile time assertion that TLVLeaf satisfies the node interface.
+var _ node = (*TLVLeaf)(nil)
 
 // TaggedHash computes the tagged hash of a leaf, as defined by:
 // H(tag, msg) = sha256(sha256(tag) || sha256(tag) || msg)

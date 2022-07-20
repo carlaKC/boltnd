@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
@@ -136,6 +137,73 @@ func TestCreateTLVLeaves(t *testing.T) {
 			require.NoError(t, err, "create leaves")
 
 			require.Equal(t, testCase.expected, actual, "leaves")
+		})
+	}
+}
+
+// mockNode is a simple implementation of the node interface for testing.
+type mockNode []byte
+
+// Compile time check that mockNode implements the mock interface.
+var _ node = (*mockNode)(nil)
+
+// TaggedHash implements the node interface on our mock, simply copying our
+// value into a chainhash type.
+func (m *mockNode) TaggedHash() chainhash.Hash {
+	var hash chainhash.Hash
+	copy(hash[:], []byte(*m))
+
+	return hash
+}
+
+// TestOrderNode tests ordering of left and right nodes in our tree.
+func TestOrderNodes(t *testing.T) {
+	var (
+		less = mockNode([]byte{1})
+		more = mockNode([]byte{2})
+		same = mockNode([]byte{2})
+	)
+
+	tests := []struct {
+		name          string
+		left          *mockNode
+		right         *mockNode
+		expectedLeft  chainhash.Hash
+		expectedRight chainhash.Hash
+	}{
+		{
+			name:          "correct order",
+			left:          &less,
+			right:         &more,
+			expectedLeft:  less.TaggedHash(),
+			expectedRight: more.TaggedHash(),
+		},
+		{
+			name:          "switch order",
+			left:          &more,
+			right:         &less,
+			expectedLeft:  less.TaggedHash(),
+			expectedRight: more.TaggedHash(),
+		},
+		{
+			name:          "equal",
+			left:          &more,
+			right:         &same,
+			expectedLeft:  more.TaggedHash(),
+			expectedRight: same.TaggedHash(),
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			actualLeft, actualRight := orderNodes(
+				testCase.left, testCase.right,
+			)
+
+			require.Equal(t, testCase.expectedLeft, actualLeft)
+			require.Equal(t, testCase.expectedRight, actualRight)
 		})
 	}
 }
