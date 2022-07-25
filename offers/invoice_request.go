@@ -2,6 +2,7 @@ package offers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -43,6 +44,20 @@ const (
 	signatureType tlv.Type = 240
 )
 
+var (
+	// ErrOfferIDRequired is returned when an invoice request does not have
+	// an offer ID, which is required.
+	ErrOfferIDRequired = errors.New("offer ID required")
+
+	// ErrPayerKeyRequired is returned when an invoice request does not have
+	// the required payer key TLV set.
+	ErrPayerKeyRequired = errors.New("payer key required")
+
+	// ErrSignatureRequired is returned when an invoice request is missing
+	// a signature TLV.
+	ErrSignatureRequired = errors.New("signature required")
+)
+
 // InvoiceRequest represents a request for an invoice associated with an offer.
 type InvoiceRequest struct {
 	// OfferID is the merkle root of the offer that this invoice request
@@ -74,6 +89,23 @@ type InvoiceRequest struct {
 	// MerkleRoot is the merkle root of the non-signature tlvs in the
 	// invoice request.
 	MerkleRoot chainhash.Hash
+}
+
+// Validate performs validation as described in the specification for an offer.
+func (i *InvoiceRequest) Validate() error {
+	if i.OfferID == nil {
+		return ErrOfferIDRequired
+	}
+
+	if i.PayerKey == nil {
+		return ErrPayerKeyRequired
+	}
+
+	if i.Signature == nil {
+		return ErrSignatureRequired
+	}
+
+	return nil
 }
 
 // EncodeInvoiceRequest encodes an invoice request as a tlv stream.
