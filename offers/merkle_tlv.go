@@ -32,6 +32,10 @@ var (
 	// TLV is matched with a nonce leaf in this construction, there should
 	// always be an even number of leaves.
 	ErrOddLeafNodes = errors.New("even number of leaf nodes expected")
+
+	// ErrNoTLVs is returned if an attempt to calculate a merkle tree with
+	// no non-signature tlv records is made.
+	ErrNoTLVs = errors.New("at least 1 non-signature TLV required")
 )
 
 // tlvEncode is the function signature used to encode TLV records.
@@ -95,6 +99,26 @@ var _ node = (*TLVLeaf)(nil)
 // reversed hash (and the spec test vectors aren't reversed).
 func (t *TLVLeaf) TaggedHash() chainhash.Hash {
 	return *chainhash.TaggedHash(t.Tag, t.Value)
+}
+
+// MerkleRoot computes a merkle tree for the set of offer tlv records provided.
+func MerkleRoot(records []tlv.Record) (*chainhash.Hash, error) {
+	leaves, err := CreateTLVLeaves(records, encodeTLV)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v records", err, len(records))
+	}
+
+	if len(leaves) == 0 {
+		return nil, ErrNoTLVs
+	}
+
+	branches, err := CreateTLVBranches(leaves)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v leaves", err, len(leaves))
+	}
+
+	hash := CalculateRoot(branches)
+	return &hash, nil
 }
 
 // CalculateRoot combines a set of branches into a merkle root.

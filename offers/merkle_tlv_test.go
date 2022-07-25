@@ -2,7 +2,9 @@ package offers
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -397,6 +399,128 @@ func TestCalculateRoot(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			actual := CalculateRoot(testCase.branches)
 			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func makeTestRecord(t *testing.T, tlvType tlv.Type, length uint64,
+	specStr string, b [8]byte) tlv.Record {
+
+	// We're going to trim the type and length off string provided by the
+	// spec, so we expect at least 4 chars.
+	require.Greater(t, len(specStr), 4, "trim type/length")
+
+	value := specStr[4:]
+	recordBytes, err := hex.DecodeString(value)
+	require.NoError(t, err, "value bytes")
+
+	// Just write the value as provided by the spec, we don't actually
+	// care how it's encoded.
+	encode := func(w io.Writer, _ interface{}, _ *[8]byte) error {
+		_, err := w.Write(recordBytes)
+		return err
+	}
+	// We can have a nil decode function because we don't need it here.
+	record := tlv.MakeStaticRecord(
+		tlvType, nil, length, encode, nil,
+	)
+
+	// Assert that we'll get back to our spec string when we encode the
+	// record.
+	specBytes, err := hex.DecodeString(specStr)
+	require.NoError(t, err, "decode spec")
+
+	encodedRecord, err := encodeTLV(record, b)
+	require.NoError(t, err, "encode record")
+
+	require.Equal(t, specBytes, encodedRecord)
+
+	return record
+}
+
+// TestMerkleRoot tests calculation of merkle root for a set of TLVs. The values
+// in this test are copied from bolt12/merkle-test.json in the spec. The json
+// file does not have the individual TLV values (only all TLVs and leaf values)
+// so this test "reconstructs" individual TLV encodings from the test.
+func TestMerkleRoot(t *testing.T) {
+	const (
+		tlv1Type    tlv.Type = 1
+		tlv1Length           = 2
+		tlv1SpecStr          = "010203e8"
+
+		tlv2Type    tlv.Type = 2
+		tlv2Length           = 8
+		tlv2SpecStr          = "02080000010000020003"
+
+		tlv3Type    tlv.Type = 3
+		tlv3Length           = 49
+		tlv3SpecStr          = "03310266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c0351800000000000000010000000000000002"
+	)
+
+	// For reuse encoding TLVs.
+	var b [8]byte
+
+	tlv1Record := makeTestRecord(t, tlv1Type, tlv1Length, tlv1SpecStr, b)
+	tlv2Record := makeTestRecord(t, tlv2Type, tlv2Length, tlv2SpecStr, b)
+	tlv3Record := makeTestRecord(t, tlv3Type, tlv3Length, tlv3SpecStr, b)
+
+	// Create a signature record
+	sigType := tlv.Type(signatureFieldStart)
+	var sigValue uint64 = 3
+
+	tlvSigRecord := tlv.MakePrimitiveRecord(sigType, &sigValue)
+
+	tests := []struct {
+		name   string
+		tlvs   []tlv.Record
+		merkle string
+		err    error
+	}{
+		{
+			name: "single tlv",
+			tlvs: []tlv.Record{
+				tlv1Record,
+			},
+			merkle: "aa0aa0f694c85492ac459c1de9831a37682985f5e840ecc9b1e28eece7dc5236",
+		},
+		{
+			name: "two tlvs",
+			tlvs: []tlv.Record{
+				tlv1Record, tlv2Record,
+			},
+			merkle: "013b756ed73554cbc4dd3d90f363cb7cba6d8a279465a21c464e582b173ff502",
+		},
+		{
+			name: "three tlvs",
+			tlvs: []tlv.Record{
+				tlv1Record, tlv2Record, tlv3Record,
+			},
+			merkle: "016fcda3b6f9ca30b35936877ca591fa101365a761a1453cfd9436777d593656",
+		},
+		{
+			name: "only sig record",
+			tlvs: []tlv.Record{
+				tlvSigRecord,
+			},
+			err: ErrNoTLVs,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			root, err := MerkleRoot(testCase.tlvs)
+			require.True(t, errors.Is(err, testCase.err))
+
+			// If we're expecting an error for the test case,
+			// don't check the root.
+			if testCase.err != nil {
+				return
+			}
+
+			actual := hex.EncodeToString(root[:])
+			require.Equal(t, testCase.merkle, actual)
 		})
 	}
 }
