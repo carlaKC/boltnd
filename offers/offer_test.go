@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
@@ -87,6 +88,10 @@ func TestOfferEncoding(t *testing.T) {
 		{
 			name: "node sig",
 			offer: &Offer{
+				// We include another field here because valid
+				// offers require a non-sig TLV to calculate
+				// merkle root.
+				NodeID:    nodeID,
 				Signature: &sig,
 			},
 		},
@@ -114,7 +119,38 @@ func TestOfferEncoding(t *testing.T) {
 				)
 			}
 
+			// We also clear our merkle root value which is
+			// calculated when we decode the offer tlv stream, we're
+			// not testing this calculation here.
+			decoded.MerkleRoot = chainhash.Hash{}
+
 			require.Equal(t, testCase.offer, decoded)
 		})
 	}
+}
+
+// TestDecodedMerkleRoot tests that the tlv merkle root is the same for an
+// offer once it has been encoded/decoded.
+func TestDecodedMerkleRoot(t *testing.T) {
+	// Create an arbitrary offer and calculate its merkle root.
+	offer := &Offer{
+		Description:   "description string",
+		MinimumAmount: lnwire.MilliSatoshi(10),
+	}
+
+	records, err := offer.records()
+	require.NoError(t, err, "get records")
+
+	merkleRoot, err := MerkleRoot(records)
+	require.NoError(t, err)
+
+	// Now encode and decode the offer to check that we get the same root
+	// after decoding.
+	offerBytes, err := EncodeOffer(offer)
+	require.NoError(t, err, "encode")
+
+	decodedOffer, err := DecodeOffer(offerBytes)
+	require.NoError(t, err, "decode")
+
+	require.Equal(t, *merkleRoot, decodedOffer.MerkleRoot)
 }

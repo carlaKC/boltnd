@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/tlv"
@@ -275,4 +276,40 @@ func encodeTLV(record tlv.Record, b [8]byte) ([]byte, error) {
 	}
 
 	return w.Bytes(), nil
+}
+
+// unknownRecordsFromParsed returns a set of tlv records from the set of parsed
+// types from a tlv stream. This function is used to produce records for tlv
+// types that we don't recognize (eg, odd records that are unknown to our code)
+// so that they can be included in merkle root calculation.
+func unknownRecordsFromParsed(parsedTypes map[tlv.Type][]byte) []tlv.Record {
+	var records []tlv.Record
+
+	for tlvType, tlvBytes := range parsedTypes {
+		// If the value of a parsed type is not included in our map, it
+		// was recognized by our code so we don't need to include it.
+		if len(tlvBytes) == 0 {
+			continue
+		}
+
+		// Create a record that just writes whatever bytes we have for
+		// the TLV value. Any encoding specifics will be included in
+		// these bytes, because we've just read them straight out of the
+		// tlv stream.
+		encode := func(w io.Writer, _ interface{}, _ *[8]byte) error {
+			_, err := w.Write(tlvBytes)
+			return err
+		}
+
+		// Create a static record with encoding capabilities, we don't
+		// include a decode function because we don't need one to
+		// calculate our merkle root.
+		record := tlv.MakeStaticRecord(
+			tlvType, tlvBytes, uint64(len(tlvBytes)), encode, nil,
+		)
+
+		records = append(records, record)
+	}
+
+	return records
 }
