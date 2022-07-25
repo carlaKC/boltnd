@@ -70,6 +70,10 @@ type InvoiceRequest struct {
 	// Signature contains a signature over the tlv merkle root of the
 	// request, using the payer key provided.
 	Signature *[64]byte
+
+	// MerkleRoot is the merkle root of the non-signature tlvs in the
+	// invoice request.
+	MerkleRoot chainhash.Hash
 }
 
 // EncodeInvoiceRequest encodes an invoice request as a tlv stream.
@@ -216,6 +220,18 @@ func DecodeInvoiceRequest(request []byte) (*InvoiceRequest, error) {
 	if _, ok := tlvMap[signatureType]; ok {
 		invRequest.Signature = &signature
 	}
+
+	// Calculate merkle root with _all_ tlv types, even the odd ones we
+	// didn't recognize, because the sender would have included them in
+	// root calculation.
+	root, err := MerkleRoot(
+		recordsFromParsedTypes(tlvMap),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("merkle root: %w", err)
+	}
+
+	invRequest.MerkleRoot = *root
 
 	return invRequest, nil
 }

@@ -75,6 +75,9 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 		{
 			name: "signature",
 			request: &InvoiceRequest{
+				// Include a non-signature field so that we can
+				// calculate a merkle root when we decode.
+				PayerKey:  testutils.GetPubkeys(t, 1)[0],
 				Signature: &signature,
 			},
 		},
@@ -101,6 +104,10 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 
 				testCase.request.Features = emptyFeatures
 			}
+
+			// Clear the decoded merkle root (because we're not
+			// testing root calculation here).
+			decoded.MerkleRoot = chainhash.Hash{}
 
 			require.Equal(t, testCase.request, decoded)
 		})
