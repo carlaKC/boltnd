@@ -298,3 +298,105 @@ func TestCreateBranches(t *testing.T) {
 		})
 	}
 }
+
+// TestCalculateRoot tests calculation of a merkle root from a set of branches.
+func TestCalculateRoot(t *testing.T) {
+	// Setup chainhash values and copy in bytes.
+	var value1, value2, value3, value4 chainhash.Hash
+	var b1, b2, b3, b4 = [32]byte{1}, [32]byte{2}, [32]byte{3}, [32]byte{4}
+
+	require.NoError(t, value1.SetBytes(b1[:]))
+	require.NoError(t, value2.SetBytes(b2[:]))
+	require.NoError(t, value3.SetBytes(b3[:]))
+	require.NoError(t, value4.SetBytes(b4[:]))
+
+	var (
+		// Precomputed TaggedHash:
+		// a84d404e10e1f3ab329b5d3caf4f6f8c81f7071744cf47c7f1c5ac59b8fdc333
+		branch1 = &TLVBranch{
+			left:  value1,
+			right: value2,
+		}
+		branch1Hash = branch1.TaggedHash()
+
+		// Precomputed TaggedHash:
+		// ccfe70ec210989c15861fe0155b634e1ce082d75c9e0455c75a863d7a263e108
+		branch2 = &TLVBranch{
+			left:  value3,
+			right: value4,
+		}
+		branch2Hash = branch2.TaggedHash()
+
+		// Precomputed TaggedHash:
+		// 8907af19a8d1ebaa00dc3175f6f03cfd060f9db8d23a3f2d33d84c7c83a9156b
+		comboBranch = &TLVBranch{
+			left:  branch1Hash,
+			right: branch2Hash,
+		}
+		comboBranchHash = comboBranch.TaggedHash()
+
+		// Precomputed TaggedHash:
+		// ccfe70ec210989c15861fe0155b634e1ce082d75c9e0455c75a863d7a263e108
+		branch3 = &TLVBranch{
+			left:  value3,
+			right: value4,
+		}
+		branch3Hash = branch3.TaggedHash()
+
+		// finalBranch is the final combination of all our branches.
+		// branch 1     branch 2     branch 3      (branch 1 < branch 2)
+		//    \            /            |
+		//      comboBranch          branch 3      (combo < branch 3)
+		//           \                /
+		//              finalBranch
+		// Precomputed hash:
+		// 4f1430127c41bc0d4495505998c7e30f67d2a120f8d1f251469cafb3e03a88fa
+		finalBranch = &TLVBranch{
+			left:  comboBranchHash,
+			right: branch3Hash,
+		}
+		finalBranchHash = finalBranch.TaggedHash()
+	)
+
+	// Assert that the ordering we expect for our tagged hash values is
+	// as expected:
+	//
+	// branch 1 < branch 2
+	require.Equal(t, -1, bytes.Compare(branch1Hash[:], branch2Hash[:]))
+
+	// branch 2 = branch 3
+	require.Equal(t, 0, bytes.Compare(branch2Hash[:], branch3Hash[:]))
+
+	// The combination of branch 1 + branch 2 < branch 3
+	require.Equal(t, -1, bytes.Compare(comboBranchHash[:], branch3Hash[:]))
+
+	tests := []struct {
+		name     string
+		branches []*TLVBranch
+		expected chainhash.Hash
+	}{
+		{
+			name: "odd branch count",
+			branches: []*TLVBranch{
+				branch1, branch2, branch3,
+			},
+			expected: finalBranchHash,
+		},
+		{
+			name: "even branch count",
+			branches: []*TLVBranch{
+				branch1, branch2,
+			},
+			expected: comboBranchHash,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			actual := CalculateRoot(testCase.branches)
+			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}

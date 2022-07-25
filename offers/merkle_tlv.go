@@ -97,6 +97,26 @@ func (t *TLVLeaf) TaggedHash() chainhash.Hash {
 	return *chainhash.TaggedHash(t.Tag, t.Value)
 }
 
+// CalculateRoot combines a set of branches into a merkle root.
+func CalculateRoot(branches []*TLVBranch) chainhash.Hash {
+	for len(branches) != 1 {
+		left, right := orderNodes(branches[0], branches[1])
+
+		newBranch := &TLVBranch{
+			left:  left,
+			right: right,
+		}
+
+		// Remove the individual branches from our set, and add our
+		// combined branch.
+		branches = branches[2:]
+		branches = append(branches, newBranch)
+	}
+
+	// We exit when we only have one branch left, this is our root.
+	return branches[0].TaggedHash()
+}
+
 // CreateTLVBranches creates a set of branches from an initial set of leaves.
 func CreateTLVBranches(leaves []*TLVLeaf) ([]*TLVBranch, error) {
 	if len(leaves)%2 != 0 {
