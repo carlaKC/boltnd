@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tlv"
@@ -56,6 +57,10 @@ var (
 	// ErrSignatureRequired is returned when an invoice request is missing
 	// a signature TLV.
 	ErrSignatureRequired = errors.New("signature required")
+
+	// ErrInvalidRequestSig is returned when an invoice request signature
+	// is invalid.
+	ErrInvalidRequestSig = errors.New("invalid signature")
 )
 
 // InvoiceRequest represents a request for an invoice associated with an offer.
@@ -103,6 +108,19 @@ func (i *InvoiceRequest) Validate() error {
 
 	if i.Signature == nil {
 		return ErrSignatureRequired
+	}
+
+	// We know that our signature is non-nil, so we can validate it against
+	// our merkle root.
+	sig, err := schnorr.ParseSignature(i.Signature[:])
+	if err != nil {
+		return fmt.Errorf("invalid signature: %v: %w", *i.Signature,
+			err)
+	}
+
+	if !sig.Verify(i.MerkleRoot[:], i.PayerKey) {
+		return fmt.Errorf("%w: %v for: %v", ErrInvalidRequestSig,
+			i.Signature[:], i.MerkleRoot)
 	}
 
 	return nil

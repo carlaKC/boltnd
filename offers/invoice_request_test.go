@@ -113,3 +113,8 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateInvoiceRequest ...
+func TestValidateInvoiceRequest(t *testing.T) {
+	// TODO
+}
