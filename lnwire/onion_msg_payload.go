@@ -1,6 +1,7 @@
 package lnwire
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
@@ -11,7 +12,83 @@ import (
 const (
 	// replyPathType is a record for onion messaging reply paths.
 	replyPathType tlv.Type = 2
+
+	// encryptedDataTLVType is a record containing encrypted data for
+	// message recipient.
+	encryptedDataTLVType tlv.Type = 4
 )
+
+// OnionMessagePayload contains the contents of an onion message payload.
+type OnionMessagePayload struct {
+	// ReplyPath contains a blinded path that can be used to respond to an
+	// onion message.
+	ReplyPath *ReplyPath
+
+	// EncryptedData contains enrypted data for the recipient.
+	EncryptedData []byte
+}
+
+// EncodeOnionMessagePayload encodes an onion message's final payload.
+func EncodeOnionMessagePayload(o *OnionMessagePayload) ([]byte, error) {
+	var records []tlv.Record
+
+	if o.ReplyPath != nil {
+		records = append(records, o.ReplyPath.record())
+	}
+
+	if len(o.EncryptedData) != 0 {
+		record := tlv.MakePrimitiveRecord(
+			encryptedDataTLVType, &o.EncryptedData,
+		)
+		records = append(records, record)
+	}
+
+	stream, err := tlv.NewStream(records...)
+	if err != nil {
+		return nil, fmt.Errorf("new stream: %w", err)
+	}
+
+	b := new(bytes.Buffer)
+	if err := stream.Encode(b); err != nil {
+		return nil, fmt.Errorf("encode stream: %w", err)
+	}
+
+	return b.Bytes(), nil
+}
+
+// DecodeOnionMessagePayload decodes an onion message's payload.
+func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
+	onionPayload := &OnionMessagePayload{
+		// Create a non-nil entry so that we can directly decode into
+		// it.
+		ReplyPath: &ReplyPath{},
+	}
+
+	records := []tlv.Record{
+		onionPayload.ReplyPath.record(),
+		tlv.MakePrimitiveRecord(
+			encryptedDataTLVType, &onionPayload.EncryptedData,
+		),
+	}
+
+	stream, err := tlv.NewStream(records...)
+	if err != nil {
+		return nil, fmt.Errorf("new stream: %w", err)
+	}
+
+	r := bytes.NewReader(o)
+	tlvMap, err := stream.DecodeWithParsedTypes(r)
+	if err != nil {
+		return nil, fmt.Errorf("decode stream: %w", err)
+	}
+
+	// If our reply path wasn't populated, replace it with a nil entry.
+	if _, ok := tlvMap[replyPathType]; !ok {
+		onionPayload.ReplyPath = nil
+	}
+
+	return onionPayload, nil
+}
 
 // ReplyPath is a blinded path used to respond to onion messages.
 type ReplyPath struct {

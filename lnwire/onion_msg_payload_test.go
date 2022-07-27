@@ -8,6 +8,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestOnionPayloadEncoding tests encoding and decoding of onion message
+// payloads.
+func TestOnionPayloadEncoding(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 4)
+
+	encoded := &OnionMessagePayload{
+		ReplyPath: &ReplyPath{
+			FirstNodeID:   pubkeys[0],
+			BlindingPoint: pubkeys[1],
+			Hops:          mockHops(t),
+		},
+		EncryptedData: []byte{1, 2},
+	}
+
+	encodedBytes, err := EncodeOnionMessagePayload(encoded)
+	require.NoError(t, err, "encode payload")
+
+	decoded, err := DecodeOnionMessagePayload(encodedBytes)
+	require.NoError(t, err, "decode paylaod")
+
+	require.Equal(t, encoded, decoded, "payloads")
+}
+
 // mockHops returns three mocked blinded hops, the final one with no encrypted
 // data.
 func mockHops(t *testing.T) []*BlindedHop {
