@@ -395,10 +395,19 @@ func handleOnionMessage(processOnion processOnion,
 			ErrBadOnionBlob, err)
 	}
 
+	// Decode the TLV stream in our payload.
+	payloadBytes := processedPacket.Payload.Payload
+	payload, err := lnwire.DecodeOnionMessagePayload(payloadBytes)
+	if err != nil {
+		return fmt.Errorf("%w: could not process payload: %v",
+			ErrBadOnionBlob, err)
+	}
+
 	switch processedPacket.Action {
 	// If we're the exit node, this onion message was intended for us.
 	case sphinx.ExitNode:
-		log.Infof("Onion message from: %v is for us!", msg.Peer)
+		log.Infof("Onion message %v from: %v is for us!", payload,
+			msg.Peer)
 
 		// TODO: handle processed packet's payload.
 		return nil
