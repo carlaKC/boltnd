@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 const (
@@ -36,6 +37,10 @@ var (
 	ErrNoForwarding = errors.New("received onion message for forwarding, " +
 		"not supported")
 
+	// ErrFinalPayload is returned if an intermediate hop in an onion
+	// message chain contains fields that are reserved for the last hop.
+	ErrFinalPayload = errors.New("intermediate hop has final hop payloads")
+
 	// ErrBadMessage is returned when we can't process an onion message.
 	ErrBadMessage = errors.New("onion message processing failed")
 
@@ -52,6 +57,11 @@ var (
 	// ErrLNDShutdown is returned when lnd shuts down one of our streams.
 	ErrLNDShutdown = errors.New("lnd shutting down")
 )
+
+// OnionMessageHandler is the function signature for handlers used to manage
+// final hop payloads included in onion messages. It takes the reply path,
+// encrypted data and value of the final hop's tlv as arguments.
+type OnionMessageHandler func(*lnwire.ReplyPath, []byte, []byte) error
 
 // Messenger houses the functionality to send and receive onion messages.
 type Messenger struct {
@@ -303,7 +313,10 @@ func (m *Messenger) receiveOnionMessages(ctx context.Context) error {
 			// Just log failures for individual onion messages,
 			// since we don't want one malformed message to send
 			// us down.
-			err := handleOnionMessage(m.processOnion, msg)
+			err := handleOnionMessage(
+				m.processOnion, lnwire.DecodeOnionMessagePayload,
+				msg, nil,
+			)
 			if err == nil {
 				continue
 			}
@@ -369,10 +382,15 @@ func (m *Messenger) processOnion(onionPkt *sphinx.OnionPacket,
 type processOnion func(onionPkt *sphinx.OnionPacket,
 	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error)
 
+// decodeOnionPayload is the function signature used to process onion packets
+// hop payload.
+type decodeOnionPayload func(o []byte) (*lnwire.OnionMessagePayload, error)
+
 // handleOnionMessage extracts onion messages from custom messages received from
-// lnd. A process onion closure is passed in for easy testing.
+// lnd. A process onion and decode onion closure are passed in for easy testing.
 func handleOnionMessage(processOnion processOnion,
-	msg lndclient.CustomMessage) error {
+	decodePayload decodeOnionPayload, msg lndclient.CustomMessage,
+	handlers map[tlv.Type]OnionMessageHandler) error {
 
 	log.Infof("Received onion message from peer: %v", msg.Peer)
 
@@ -397,7 +415,7 @@ func handleOnionMessage(processOnion processOnion,
 
 	// Decode the TLV stream in our payload.
 	payloadBytes := processedPacket.Payload.Payload
-	payload, err := lnwire.DecodeOnionMessagePayload(payloadBytes)
+	payload, err := decodePayload(payloadBytes)
 	if err != nil {
 		return fmt.Errorf("%w: could not process payload: %v",
 			ErrBadOnionBlob, err)
@@ -409,12 +427,56 @@ func handleOnionMessage(processOnion processOnion,
 		log.Infof("Onion message %v from: %v is for us!", payload,
 			msg.Peer)
 
-		// TODO: handle processed packet's payload.
+		// If we have no handlers registered, then we can't do anything
+		// else with this message.
+		if handlers == nil {
+			log.Info("No handlers registered, skipping %v final "+
+				"hop payloads", len(payload.FinalHopPayloads))
+
+			return nil
+		}
+
+		// For each of our final hop payloads, identify a handling
+		// function (if any) and handoff the payload.
+		for _, extraData := range payload.FinalHopPayloads {
+			handler, ok := handlers[extraData.TLVType]
+			if !ok {
+				log.Debugf("Final tlv: %v / %x unhandled",
+					extraData.TLVType, extraData.Value)
+
+				continue
+			}
+
+			log.Debugf("Handing off TLV: %v / %w to handler",
+				extraData.TLVType, extraData.Value)
+
+			if err := handler(
+				payload.ReplyPath, payload.EncryptedData,
+				extraData.Value,
+			); err != nil {
+				return fmt.Errorf("handler for: %v/%x "+
+					"failed: %w", extraData.TLVType,
+					extraData.Value, err)
+			}
+		}
+
 		return nil
 
 	// We don't support forwarding at present, so we fail if an onion with
 	// more hops is received.
 	case sphinx.MoreHops:
+		// Fail if we have unexpected final hop tlvs.
+		//
+		// Note: this is not currently a requirement in the spec,
+		// so enforcing this adds additional restrictions. This isn't
+		// much of an issue when we're not forwarding messages anyway,
+		// but may need to be removed in future.
+		if len(payload.FinalHopPayloads) != 0 {
+			return fmt.Errorf("%w: %v unexpected final hop "+
+				"payloads", ErrFinalPayload,
+				len(payload.FinalHopPayloads))
+		}
+
 		return ErrNoForwarding
 
 	// If we encounter a sphinx failure, just log the error and ignore the
