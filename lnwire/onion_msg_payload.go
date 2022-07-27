@@ -8,6 +8,111 @@ import (
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
+const (
+	// replyPathType is a record for onion messaging reply paths.
+	replyPathType tlv.Type = 2
+)
+
+// ReplyPath is a blinded path used to respond to onion messages.
+type ReplyPath struct {
+	// FirstNodeID is the pubkey of the first node in the reply path.
+	FirstNodeID *btcec.PublicKey
+
+	// BlindingPoint is the ephemeral pubkey used in route blinding.
+	BlindingPoint *btcec.PublicKey
+
+	// Hops is a set of blinded hops following the first node ID to deliver
+	// responses to.
+	Hops []*BlindedHop
+}
+
+// record produces a tlv record for a reply path.
+func (r *ReplyPath) record() tlv.Record {
+	return tlv.MakeDynamicRecord(
+		replyPathType, r, r.size, encodeReplyPath, decodeReplyPath,
+	)
+}
+
+// size returns the encoded size of our reply path.
+func (r *ReplyPath) size() uint64 {
+	// First node pubkey 33 + blinding point pubkey 33.
+	size := uint64(33 + 33)
+
+	// Add each hop's size to our total.
+	for _, hop := range r.Hops {
+		size += hop.size()
+	}
+
+	return size
+}
+
+// encodeReplyPath encodes a reply path tlv.
+func encodeReplyPath(w io.Writer, val interface{}, buf *[8]byte) error {
+	if p, ok := val.(*ReplyPath); ok {
+		if err := tlv.EPubKey(w, &p.FirstNodeID, buf); err != nil {
+			return fmt.Errorf("encode first node id: %w", err)
+		}
+
+		if err := tlv.EPubKey(w, &p.BlindingPoint, buf); err != nil {
+			return fmt.Errorf("encode blinded path: %w", err)
+		}
+
+		for i, hop := range p.Hops {
+			if err := encodeBlindedHop(w, hop, buf); err != nil {
+				return fmt.Errorf("hop %v: %w", i, err)
+			}
+		}
+
+		return nil
+	}
+
+	return tlv.NewTypeForEncodingErr(val, "*ReplyPath")
+}
+
+// decodeReplyPath decodes a reply path tlv.
+func decodeReplyPath(r io.Reader, val interface{}, buf *[8]byte,
+	l uint64) error {
+
+	if p, ok := val.(*ReplyPath); ok && l > 35 {
+		err := tlv.DPubKey(r, &p.FirstNodeID, buf, 33)
+		if err != nil {
+			return fmt.Errorf("decode first id: %w", err)
+		}
+
+		err = tlv.DPubKey(r, &p.BlindingPoint, buf, 33)
+		if err != nil {
+			return fmt.Errorf("decode blinding point:  %w", err)
+		}
+
+		// Track the number of bytes that we expect to have left in
+		// our record.
+		remainingBytes := l - 33 - 33
+
+		// We expect the remainder of bytes in this message to contain
+		// blinded hops. Decode hops and add them to our path until
+		// we've read the full record. If we have a partial number of
+		// bytes left (ie, not enough to decode a full hop), we expect
+		// decodeBlindedHop to fail, so we don't need to check that we
+		// exactly hit 0 remaining bytes.
+		for remainingBytes > 0 {
+			hop := &BlindedHop{}
+			bytesRead, err := decodeBlindedHop(
+				r, hop, buf, uint64(remainingBytes),
+			)
+			if err != nil {
+				return fmt.Errorf("decode hop: %w", err)
+			}
+
+			p.Hops = append(p.Hops, hop)
+			remainingBytes -= bytesRead
+		}
+
+		return nil
+	}
+
+	return tlv.NewTypeForDecodingErr(val, "*ReplyPath", l, l)
+}
+
 // BlindedHop contains a blinded node ID and encrypted data used to send onion
 // messages over blinded routes.
 type BlindedHop struct {
