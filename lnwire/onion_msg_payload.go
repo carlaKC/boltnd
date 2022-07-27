@@ -2,14 +2,20 @@ package lnwire
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
 const (
+	// finalHopPayloadStart is the inclusive beginning of the tlv type
+	// range that is reserved for payloads for the final hop.
+	finalHopPayloadStart tlv.Type = 64
+
 	// replyPathType is a record for onion messaging reply paths.
 	replyPathType tlv.Type = 2
 
@@ -17,6 +23,10 @@ const (
 	// message recipient.
 	encryptedDataTLVType tlv.Type = 4
 )
+
+// ErrNotFinalPayload is returned when a final hop payload is not within the
+// correct range.
+var ErrNotFinalPayload = errors.New("final hop payloads type should be >= 64")
 
 // OnionMessagePayload contains the contents of an onion message payload.
 type OnionMessagePayload struct {
@@ -26,6 +36,9 @@ type OnionMessagePayload struct {
 
 	// EncryptedData contains enrypted data for the recipient.
 	EncryptedData []byte
+
+	// FinalHopPayloads contains any tlvs with type > 64 that
+	FinalHopPayloads []*FinalHopPayload
 }
 
 // EncodeOnionMessagePayload encodes an onion message's final payload.
@@ -42,6 +55,25 @@ func EncodeOnionMessagePayload(o *OnionMessagePayload) ([]byte, error) {
 		)
 		records = append(records, record)
 	}
+
+	for _, finalHopPayload := range o.FinalHopPayloads {
+		if finalHopPayload.TLVType < finalHopPayloadStart {
+			return nil, fmt.Errorf("%w: %v out of range",
+				ErrNotFinalPayload, finalHopPayload.TLVType)
+		}
+
+		// Create a primitive record that just writes the final hop
+		// payload's bytes directly. The creating function should have
+		// encoded the value correctly.
+		record := tlv.MakePrimitiveRecord(
+			finalHopPayload.TLVType, &finalHopPayload.Value,
+		)
+		records = append(records, record)
+	}
+
+	// Sort our records just in case the final hop payload records were
+	// provided in the incorrect order.
+	tlv.SortRecords(records)
 
 	stream, err := tlv.NewStream(records...)
 	if err != nil {
@@ -87,7 +119,54 @@ func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
 		onionPayload.ReplyPath = nil
 	}
 
+	// Once we're decoded our message, we want to also include any tlvs
+	// that are intended for the final hop's payload which we may not have
+	// recognized. We'll just directly read these out and allow higher
+	// application layers to deal with them.
+	for tlvType, tlvBytes := range tlvMap {
+		// Skip any tlvs that are not in our range.
+		if tlvType < finalHopPayloadStart {
+			continue
+		}
+
+		// Skip any tlvs that have been recognized in our decoding (a
+		// zero entry means that we recognized the entry).
+		if len(tlvBytes) == 0 {
+			continue
+		}
+
+		// Add the payload to our message's final hop payloads.
+		payload := &FinalHopPayload{
+			TLVType: tlvType,
+			Value:   tlvBytes,
+		}
+
+		onionPayload.FinalHopPayloads = append(
+			onionPayload.FinalHopPayloads, payload,
+		)
+	}
+
+	// Iteration through maps occurs in random order - sort final hop
+	// payloads in ascending order to make this decoding function
+	// deterministic.
+	sort.SliceStable(onionPayload.FinalHopPayloads, func(i, j int) bool {
+		return onionPayload.FinalHopPayloads[i].TLVType <
+			onionPayload.FinalHopPayloads[j].TLVType
+	})
+
 	return onionPayload, nil
+}
+
+// FinalHopPayload contains values reserved for the final hop, which are just
+// directly read from the tlv stream.
+type FinalHopPayload struct {
+	// TLVType is the type for the payload.
+	TLVType tlv.Type
+
+	// Value is the raw byte value read for this tlv type. This field is
+	// expected to contain "sub-tlv" namespaces, and will require further
+	// decoding to be used.
+	Value []byte
 }
 
 // ReplyPath is a blinded path used to respond to onion messages.
