@@ -82,6 +82,10 @@ type Messenger struct {
 	// once connected.
 	lookupPeerAttempts int
 
+	// onionMsgHandlers contains a set of handlers for onion message final
+	// hop payloads.
+	onionMsgHandlers map[tlv.Type]OnionMessageHandler
+
 	// requestShutdown is called when the messenger experiences an error to
 	// signal to calling code that it should gracefully exit.
 	requestShutdown func(err error)
@@ -315,7 +319,7 @@ func (m *Messenger) receiveOnionMessages(ctx context.Context) error {
 			// us down.
 			err := handleOnionMessage(
 				m.processOnion, lnwire.DecodeOnionMessagePayload,
-				msg, nil,
+				msg, m.onionMsgHandlers,
 			)
 			if err == nil {
 				continue
