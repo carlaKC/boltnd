@@ -260,7 +260,7 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 	// We don't expect the messenger's shutdown function to be used, so
 	// we can provide nil (knowing that our tests will panic if it's used).
 	messenger := NewOnionMessenger(
-		&chaincfg.RegressionNetParams, lnd, nodeKeyECDH, nil,
+		&chaincfg.RegressionNetParams, lnd, nodeKeyECDH, nil, nil,
 	)
 
 	// Overwrite our peer lookup defaults so that we don't have sleeps in
@@ -731,7 +731,8 @@ func testReceiveOnionMessages(t *testing.T, privkey *btcec.PrivateKey,
 	)
 
 	messenger := NewOnionMessenger(
-		&chaincfg.RegressionNetParams, lnd, nodeKeyECDH, requestShutdown,
+		&chaincfg.RegressionNetParams, lnd, nodeKeyECDH, nil,
+		requestShutdown,
 	)
 	err := messenger.Start()
 	require.NoError(t, err, "start messenger")

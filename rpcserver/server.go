@@ -70,7 +70,8 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 
 	// Finally setup an onion messenger using the onion router.
 	s.onionMsgr = onionmsg.NewOnionMessenger(
-		lnd.ChainParams, lnd.Client, nodeKeyECDH, s.requestShutdown,
+		lnd.ChainParams, lnd.Client, nodeKeyECDH, nil,
+		s.requestShutdown,
 	)
 
 	if err := s.onionMsgr.Start(); err != nil {

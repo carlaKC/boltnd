@@ -96,7 +96,9 @@ type Messenger struct {
 
 // NewOnionMessenger creates a new onion messenger.
 func NewOnionMessenger(params *chaincfg.Params, lnd LndOnionMsg,
-	nodeKeyECDH sphinx.SingleKeyECDH, shutdown func(error)) *Messenger {
+	nodeKeyECDH sphinx.SingleKeyECDH,
+	handlers map[tlv.Type]OnionMessageHandler,
+	shutdown func(error)) *Messenger {
 
 	return &Messenger{
 		lnd: lnd,
@@ -105,6 +107,7 @@ func NewOnionMessenger(params *chaincfg.Params, lnd LndOnionMsg,
 		),
 		lookupPeerBackoff:  lookupPeerBackoffDefault,
 		lookupPeerAttempts: lookupPeerAttemptsDefault,
+		onionMsgHandlers:   handlers,
 		requestShutdown:    shutdown,
 		quit:               make(chan struct{}),
 	}
