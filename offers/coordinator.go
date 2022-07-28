@@ -67,6 +67,10 @@ type Coordinator struct {
 	// main loop.
 	paymentResults chan *paymentResult
 
+	// incomingInvoices is a channel used to deliver incoming invoices
+	// delivered over onion messages.
+	incomingInvoices chan []byte
+
 	// requestShutdown is called when the messenger experiences an error to
 	// signal to calling code that it should gracefully exit.
 	requestShutdown func(err error)
@@ -80,11 +84,12 @@ func NewCoordinator(lnd LNDOffers,
 	requestShutdown func(err error)) *Coordinator {
 
 	return &Coordinator{
-		lnd:             lnd,
-		outboundOffers:  make(map[lntypes.Hash]*activeOfferState),
-		paymentResults:  make(chan *paymentResult),
-		requestShutdown: requestShutdown,
-		quit:            make(chan struct{}),
+		lnd:              lnd,
+		outboundOffers:   make(map[lntypes.Hash]*activeOfferState),
+		paymentResults:   make(chan *paymentResult),
+		incomingInvoices: make(chan []byte),
+		requestShutdown:  requestShutdown,
+		quit:             make(chan struct{}),
 	}
 }
 
@@ -170,10 +175,48 @@ func (c *Coordinator) Stop() error {
 	return nil
 }
 
+// HandleInvoice delivers an incoming invoice to our main event loop.
+func (c *Coordinator) HandleInvoice(_ *lnwire.ReplyPath, _ []byte,
+	invoice []byte) error {
+
+	// TODO - does the caller need a way to cancel?
+	select {
+	case c.incomingInvoices <- invoice:
+		return nil
+
+	case <-c.quit:
+		return ErrShuttingDown
+	}
+}
+
 // handleOffers is the main goroutine that handles offer exchanges.
 func (c *Coordinator) handleOffers() error {
 	for {
 		select {
+		// Handle incoming invoices.
+		case invBytes := <-c.incomingInvoices:
+			// Decode the incoming invoice. Do not exit if we fail
+			// here, because then we can be shut down by counter
+			// parties sending us junk.
+			invoice, err := lnwire.DecodeInvoice(invBytes)
+			if err != nil {
+				log.Errorf("Decode invoice: %v", err)
+				continue
+			}
+
+			// Check that the invoice is valid.
+			if err := invoice.Validate(); err != nil {
+				log.Errorf("Invalid invoice: %v", err)
+				continue
+			}
+
+			// Handle the incoming invoice, dispatching a payment
+			// if required.
+			if err := c.handleInvoice(invoice); err != nil {
+				log.Errorf("Handle invoice: %v", err)
+				continue
+			}
+
 		// Consume the outcomes of payments to offer invoices.
 		case result := <-c.paymentResults:
 			// It's pretty serious if we're paying offers that we
