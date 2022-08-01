@@ -1,15 +1,61 @@
 package offers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/carlakc/boltnd/lnwire"
 )
 
 var (
 	// ErrShuttingDown is returned when the coordinator exits.
 	ErrShuttingDown = errors.New("coordinator shutting down")
+
+	// ErrOfferIDIncorrect is returned if an invoice's ID doesn't match
+	// our offer merkle root.
+	ErrOfferIDIncorrect = errors.New("invoice offer ID does not match " +
+		"original offer")
+
+	// ErrNodeIDIncorrect is returned when an invoice's node ID doesn't
+	// match the original offer.
+	ErrNodeIDIncorrect = errors.New("invoice node ID does not match " +
+		"original offer")
+
+	// ErrDescriptionIncorrect is returned when an invoice's description
+	// doesn't match the original offer.
+	ErrDescriptionIncorrect = errors.New("invoice description does not " +
+		"match original offer")
+
+	// ErrAmountIncorrect is returned if an invoice's amount is less than
+	// the minimum set by an offer.
+	ErrAmountIncorrect = errors.New("invoice amount < offer minimum")
+
+	// ErrPayerKeyMismatch is returned when an invoice request's payer
+	// key does not match the invoice.
+	ErrPayerKeyMismatch = errors.New("request payer key does not match " +
+		"invoice")
+
+	// ErrPayerInfoMismatch is returned when an invoice request's note does
+	// not match the invoice.
+	ErrPayerInfoMismatch = errors.New("request info does not match " +
+		"invoice")
+
+	// ErrPayerNoteMismatch is returned when an invoice request's note
+	// does not match the invoice.
+	ErrPayerNoteMismatch = errors.New("request note does not match " +
+		"invoice")
+
+	// ErrQuantityMismatch is returned when an invoice's quantity does not
+	// match the original invoice.
+	ErrQuantityMismatch = errors.New("request quantity does not match " +
+		"invoice")
+
+	// ErrChainhashMismatch is returned when an offer, invoice request or
+	// invoice don't have matching chain hashes.
+	ErrChainhashMismatch = errors.New("chainhash does not match")
 )
 
 // Coordinator manages the exchange of offer-related messages and payment of
@@ -82,4 +128,70 @@ func (c *Coordinator) handleOffers() error {
 			return ErrShuttingDown
 		}
 	}
+}
+
+// validateExchange validates that the messages that form part of a single
+// offer exchange are valid. This function assumes that the invoice request
+// is valid for the offer, focusing on validation of the invoice against the
+// offer and request respectively.
+func validateExchange(o *lnwire.Offer, r *lnwire.InvoiceRequest,
+	i *lnwire.Invoice) error {
+
+	// We need all chain hashes to be equal, so we just check against the
+	// offer for request and invoice. If these values are an empty hash,
+	// validation will still pass.
+	if !bytes.Equal(o.Chainhash[:], r.Chainhash[:]) {
+		return fmt.Errorf("%w: offer: %v, invoice request: %v",
+			ErrChainhashMismatch, o.Chainhash, r.Chainhash)
+	}
+
+	if !bytes.Equal(o.Chainhash[:], i.Chainhash[:]) {
+		return fmt.Errorf("%w: offer: %v, invoice: %v",
+			ErrChainhashMismatch, o.Chainhash, i.Chainhash)
+	}
+
+	if !bytes.Equal(o.MerkleRoot[:], i.OfferID[:]) {
+		return fmt.Errorf("%w: %x merkle root, %x offer id",
+			ErrOfferIDIncorrect, o.MerkleRoot, i.OfferID)
+	}
+
+	if o.NodeID != i.NodeID {
+		return fmt.Errorf("%w: offer: %v, invoice: %v",
+			ErrNodeIDIncorrect, o.NodeID, i.NodeID)
+	}
+
+	if o.Description != i.Description {
+		return fmt.Errorf("%w: offer: %v, invoice: %v",
+			ErrDescriptionIncorrect, o.Description, i.Description)
+	}
+
+	if i.Amount < o.MinimumAmount {
+		return fmt.Errorf("%w: %v < %v", ErrAmountIncorrect, i.Amount,
+			o.MinimumAmount)
+	}
+
+	if r.PayerKey != i.PayerKey {
+		return fmt.Errorf("%w: request: %v, invoice: %v",
+			ErrPayerKeyMismatch, r.PayerKey, i.PayerKey)
+	}
+
+	if !bytes.Equal(r.PayerInfo, i.PayerInfo) {
+		return fmt.Errorf("%w: request: %v, invoice: %v",
+			ErrPayerInfoMismatch, r.PayerInfo, i.PayerInfo)
+	}
+
+	if r.PayerNote != i.PayerNote {
+		return fmt.Errorf("%w: request: %v, invoice: %v",
+			ErrPayerNoteMismatch, r.PayerInfo, i.PayerInfo)
+	}
+
+	if r.Quantity != i.Quantity {
+		return fmt.Errorf("%w: request: %v, invoice: %v",
+			ErrQuantityMismatch, r.Quantity, i.Quantity)
+	}
+
+	// - MUST reject the invoice if the `offer_id` does not refer an
+	// unexpired offer with `send_invoice`
+
+	return nil
 }
