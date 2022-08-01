@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offers"
 	"github.com/carlakc/boltnd/offersrpc"
 	"google.golang.org/grpc/codes"
@@ -54,7 +55,7 @@ func parseDecodeOfferRequest(req *offersrpc.DecodeOfferRequest) (string,
 
 // composeDecodeOfferResponse creates a DecodeOfferResponse from the internal
 // offer type.
-func composeDecodeOfferResponse(offer *offers.Offer) (
+func composeDecodeOfferResponse(offer *lnwire.Offer) (
 	*offersrpc.DecodeOfferResponse, error) {
 
 	rpcOffer := &offersrpc.Offer{
