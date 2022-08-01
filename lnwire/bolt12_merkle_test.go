@@ -1,4 +1,4 @@
-package offers
+package lnwire
 
 import (
 	"bytes"
