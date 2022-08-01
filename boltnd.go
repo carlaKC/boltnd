@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/carlakc/boltnd/offers"
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/rpcserver"
@@ -175,4 +176,5 @@ func setupLoggers(cfg *Config) {
 	cfg.SetupLogger(Subsystem, UseLogger)
 	cfg.SetupLogger(rpcserver.Subsystem, rpcserver.UseLogger)
 	cfg.SetupLogger(onionmsg.Subsystem, onionmsg.UseLogger)
+	cfg.SetupLogger(offers.Subsystem, offers.UseLogger)
 }
