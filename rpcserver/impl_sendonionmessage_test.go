@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -23,6 +24,11 @@ func TestRPCSendOnionMessage(t *testing.T) {
 
 	vertex, err := route.NewVertexFromBytes(pubkeyBytes)
 	require.NoError(t, err, "pubkey")
+
+	finalPayload := &lnwire.FinalHopPayload{
+		TLVType: 100,
+		Value:   []byte{9, 9, 9},
+	}
 
 	tests := []struct {
 		name      string
@@ -63,6 +69,39 @@ func TestRPCSendOnionMessage(t *testing.T) {
 				Pubkey: pubkeyBytes,
 			},
 			success: true,
+		},
+		{
+			name: "send message succeeds with final payload",
+			setupMock: func(m *mock.Mock) {
+				finalPayloads := []*lnwire.FinalHopPayload{
+					finalPayload,
+				}
+
+				mockSendMessage(m, vertex, finalPayloads, nil)
+			},
+			request: &offersrpc.SendOnionMessageRequest{
+				Pubkey: pubkeyBytes,
+				FinalPayloads: map[uint64][]byte{
+					uint64(finalPayload.TLVType): finalPayload.Value,
+				},
+			},
+			success: true,
+		},
+		{
+			name: "invalid final payload",
+			// We expect our test to fail when parsing the request,
+			// so don't need to prime our mock at all.
+			setupMock: func(*mock.Mock) {},
+			request: &offersrpc.SendOnionMessageRequest{
+				Pubkey: pubkeyBytes,
+				// Provide a final payload tlv type that is
+				// below the allowed range for final payloads.
+				FinalPayloads: map[uint64][]byte{
+					2: []byte{1, 2},
+				},
+			},
+			success: false,
+			errCode: codes.InvalidArgument,
 		},
 	}
 
