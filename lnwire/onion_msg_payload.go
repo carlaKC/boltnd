@@ -26,6 +26,10 @@ const (
 	// InvoiceNamespaceType is a record containing the sub-namespace of
 	// tlvs that describe an invoice.
 	InvoiceNamespaceType tlv.Type = 64
+
+	// InvoiceRequestNamespaceType is a record containing the sub-namespace
+	// of tlvs that request invoices for offers.
+	InvoiceRequestNamespaceType tlv.Type = 66
 )
 
 // ErrNotFinalPayload is returned when a final hop payload is not within the
@@ -103,6 +107,10 @@ func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
 		invoicePayload = &FinalHopPayload{
 			TLVType: InvoiceNamespaceType,
 		}
+
+		invoiceRequestPayload = &FinalHopPayload{
+			TLVType: InvoiceRequestNamespaceType,
+		}
 	)
 
 	records := []tlv.Record{
@@ -116,6 +124,12 @@ func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
 		// here, or decoding will fail. We decode directly into a final
 		// hop payload, so that we can just add it if present later.
 		tlv.MakePrimitiveRecord(InvoiceNamespaceType, &invoicePayload.Value),
+		// Add a record for invoice request sub-namespace so that we
+		// won't fail on the even tlv - reasoning above.
+		tlv.MakePrimitiveRecord(
+			InvoiceRequestNamespaceType,
+			&invoiceRequestPayload.Value,
+		),
 	}
 
 	stream, err := tlv.NewStream(records...)
@@ -168,6 +182,12 @@ func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
 	if _, ok := tlvMap[InvoiceNamespaceType]; ok {
 		onionPayload.FinalHopPayloads = append(
 			onionPayload.FinalHopPayloads, invoicePayload,
+		)
+	}
+
+	if _, ok := tlvMap[InvoiceRequestNamespaceType]; ok {
+		onionPayload.FinalHopPayloads = append(
+			onionPayload.FinalHopPayloads, invoiceRequestPayload,
 		)
 	}
 
