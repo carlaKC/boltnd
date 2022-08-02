@@ -22,6 +22,10 @@ const (
 	// encryptedDataTLVType is a record containing encrypted data for
 	// message recipient.
 	encryptedDataTLVType tlv.Type = 4
+
+	// InvoiceNamespaceType is a record containing the sub-namespace of
+	// tlvs that describe an invoice.
+	InvoiceNamespaceType tlv.Type = 64
 )
 
 // ErrNotFinalPayload is returned when a final hop payload is not within the
@@ -89,17 +93,29 @@ func EncodeOnionMessagePayload(o *OnionMessagePayload) ([]byte, error) {
 
 // DecodeOnionMessagePayload decodes an onion message's payload.
 func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
-	onionPayload := &OnionMessagePayload{
-		// Create a non-nil entry so that we can directly decode into
-		// it.
-		ReplyPath: &ReplyPath{},
-	}
+	var (
+		onionPayload = &OnionMessagePayload{
+			// Create a non-nil entry so that we can directly
+			// decode into it.
+			ReplyPath: &ReplyPath{},
+		}
+
+		invoicePayload = &FinalHopPayload{
+			TLVType: InvoiceNamespaceType,
+		}
+	)
 
 	records := []tlv.Record{
 		onionPayload.ReplyPath.record(),
 		tlv.MakePrimitiveRecord(
 			encryptedDataTLVType, &onionPayload.EncryptedData,
 		),
+		// Add a record to read invoice sub-namespaces out. Although
+		// this is technically one of our "final hop payload" tlvs, it
+		// is an even value, so we need to include it as a know tlv
+		// here, or decoding will fail. We decode directly into a final
+		// hop payload, so that we can just add it if present later.
+		tlv.MakePrimitiveRecord(InvoiceNamespaceType, &invoicePayload.Value),
 	}
 
 	stream, err := tlv.NewStream(records...)
@@ -142,6 +158,16 @@ func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
 
 		onionPayload.FinalHopPayloads = append(
 			onionPayload.FinalHopPayloads, payload,
+		)
+	}
+
+	// If we read out an invoice tlv sub-namespace, add it to our set of
+	// final payloads. This value won't have been added in the loop above,
+	// because we recognized the TLV so len(tlvMap[invoiceType].tlvBytes)
+	// will be zero (thus, skipped above).
+	if _, ok := tlvMap[InvoiceNamespaceType]; ok {
+		onionPayload.FinalHopPayloads = append(
+			onionPayload.FinalHopPayloads, invoicePayload,
 		)
 	}
 
