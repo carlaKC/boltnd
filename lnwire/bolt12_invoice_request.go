@@ -2,6 +2,7 @@ package lnwire
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -21,6 +22,16 @@ const (
 	invReqPayerNoteType tlv.Type = 39
 	invReqPayerInfoType tlv.Type = 50
 	invReqSignatureType tlv.Type = 240
+)
+
+var (
+	// ErrBelowMinAmount is returned if an attempt to make a request for
+	// less than the offer minimum is created.
+	ErrBelowMinAmount = errors.New("amount less than offer minimum")
+
+	// ErrOutsideQuantityRange is returned if a quantity outside of the
+	// offer's range is requested.
+	ErrOutsideQuantityRange = errors.New("quantity outside range")
 )
 
 // InvoiceRequest represents a bolt 12 request for an invoice.
@@ -53,6 +64,57 @@ type InvoiceRequest struct {
 
 	// TODO - add on decode
 	MerkleRoot chainhash.Hash
+}
+
+// NewInvoiceRequest returns a new invoice request for the offer provided. This
+// function does not produce a signature for the invoice, but it does calculate
+// its tlv merkle root.
+func NewInvoiceRequest(offer *Offer, amount lnwire.MilliSatoshi,
+	quantity uint64, payerKey *btcec.PublicKey, payerNote string) (
+	*InvoiceRequest, error) {
+
+	if amount < offer.MinimumAmount {
+		return nil, fmt.Errorf("%w: %v < %v", ErrBelowMinAmount, amount,
+			offer.MinimumAmount)
+	}
+
+	if offer.QuantityMin != 0 && quantity < offer.QuantityMin {
+		return nil, fmt.Errorf("%w: %v < %v", ErrOutsideQuantityRange,
+			quantity, offer.QuantityMin)
+	}
+
+	if offer.QuantityMax != 0 && quantity > offer.QuantityMax {
+		return nil, fmt.Errorf("%w: %v > %v", ErrOutsideQuantityRange,
+			quantity, offer.QuantityMax)
+	}
+
+	// TODO - make this a lntypes.Hash
+	offerID, err := lntypes.MakeHash(offer.MerkleRoot[:])
+	if err != nil {
+		return nil, fmt.Errorf("%w: bad offer id", err)
+	}
+
+	request := &InvoiceRequest{
+		OfferID:   offerID,
+		Amount:    amount,
+		Features:  offer.Features,
+		Quantity:  quantity,
+		PayerKey:  payerKey,
+		PayerNote: payerNote,
+	}
+
+	records, err := request.records()
+	if err != nil {
+		return nil, fmt.Errorf("records: %w", err)
+	}
+
+	root, err := MerkleRoot(records)
+	if err != nil {
+		return nil, fmt.Errorf("merkle root: %v", err)
+	}
+	request.MerkleRoot = *root
+
+	return request, nil
 }
 
 // TODO - fill in merk
