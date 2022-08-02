@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
@@ -49,6 +50,10 @@ type InvoiceRequest struct {
 	// Signature is an optional signature on the tlv merkle root of the
 	// request.
 	Signature *[64]byte
+
+	// TODO - add on decode
+	MerkleRoot chainhash.Hash
+}
 }
 
 // records returns a set of records for all the non-nil fields in an invoice
