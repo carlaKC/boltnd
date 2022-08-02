@@ -2,6 +2,7 @@ package lnwire
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -41,6 +42,20 @@ const (
 	invReqSignatureType tlv.Type = 240
 )
 
+var (
+	// ErrOfferIDRequired is returned when an invoice request does not
+	// contain an associated offer id.
+	ErrOfferIDRequired = errors.New("offer id required")
+
+	// ErrPayerKeyRequired is returned when an invoice request does not
+	// contain a payer key.
+	ErrPayerKeyRequired = errors.New("payer key required")
+
+	// ErrSignatureRequired is returned when an invoice request does not
+	// contain a signature.
+	ErrSignatureRequired = errors.New("signature required")
+)
+
 // InvoiceRequest represents a bolt 12 request for an invoice.
 type InvoiceRequest struct {
 	// OfferID is the merkle root of the offer this request is associated
@@ -77,6 +92,36 @@ type InvoiceRequest struct {
 
 // Compile time check that invoice request implements the tlv tree interface.
 var _ tlvTree = (*InvoiceRequest)(nil)
+
+// Validate performs validation on an invoice request as described in the
+// specification.
+func (i *InvoiceRequest) Validate() error {
+	if i.OfferID == lntypes.ZeroHash {
+		return ErrOfferIDRequired
+	}
+
+	if i.PayerKey == nil {
+		return ErrPayerKeyRequired
+	}
+
+	if i.Signature == nil {
+		return ErrSignatureRequired
+	}
+
+	// Check that our signature is a valid signature of the merkle root for
+	// the request.
+	sigDigest := signatureDigest(
+		invoiceRequestTag, signatureTag, i.MerkleRoot,
+	)
+
+	if err := validateSignature(
+		*i.Signature, i.PayerKey, sigDigest[:],
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // records returns a set of records for all the non-nil fields in an invoice
 // request.

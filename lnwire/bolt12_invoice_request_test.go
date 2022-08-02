@@ -1,8 +1,10 @@
 package lnwire
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -137,4 +139,87 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 			require.Equal(t, testCase.encoded, decoded)
 		})
 	}
+}
+
+// TestInvoiceRequestValidation tests validation of invoice requests.
+func TestInvoiceRequestValidation(t *testing.T) {
+	var (
+		hash, merkleRoot lntypes.Hash
+
+		privkey = testutils.GetPrivkeys(t, 1)[0]
+		pubkey  = privkey.PubKey()
+	)
+
+	copy(hash[:], []byte{1, 2, 3})
+
+	// Populate a random merkle root value to test signature validation.
+	copy(merkleRoot[:], []byte{3, 2, 1})
+	digest := signatureDigest(invoiceRequestTag, signatureTag, merkleRoot)
+
+	sig, err := schnorr.Sign(privkey, digest[:])
+	require.NoError(t, err, "sign root")
+
+	// Serialized our signature and copy into [64]byte.
+	sigBytes := sig.Serialize()
+	var schnorrSig [64]byte
+	copy(schnorrSig[:], sigBytes)
+
+	tests := []struct {
+		name       string
+		invoiceReq *InvoiceRequest
+		err        error
+	}{
+		{
+			name:       "no offer ID",
+			invoiceReq: &InvoiceRequest{},
+			err:        ErrOfferIDRequired,
+		},
+		{
+			name: "no payer key",
+			invoiceReq: &InvoiceRequest{
+				OfferID: hash,
+			},
+			err: ErrPayerKeyRequired,
+		},
+		{
+			name: "no signature",
+			invoiceReq: &InvoiceRequest{
+				OfferID:  hash,
+				PayerKey: pubkey,
+			},
+			err: ErrSignatureRequired,
+		},
+		{
+			name: "invalid signature",
+			invoiceReq: &InvoiceRequest{
+				OfferID:  hash,
+				PayerKey: pubkey,
+				// Use a valid signature over merkleRoot, but
+				// then set our merkle root value to something
+				// else to force an error.
+				Signature:  &schnorrSig,
+				MerkleRoot: hash,
+			},
+			err: ErrInvalidSig,
+		},
+		{
+			name: "valid signature",
+			invoiceReq: &InvoiceRequest{
+				OfferID:    hash,
+				PayerKey:   pubkey,
+				Signature:  &schnorrSig,
+				MerkleRoot: merkleRoot,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.invoiceReq.Validate()
+			require.True(t, errors.Is(err, testCase.err))
+		})
+	}
+
 }
