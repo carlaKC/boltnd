@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
 )
@@ -194,5 +195,56 @@ func MockListChannels(m *mock.Mock, activeOnly, publicOnly bool,
 		"ListChannels", mock.Anything, activeOnly, publicOnly,
 	).Once().Return(
 		channels, err,
+	)
+}
+
+// SendPayment mocks dispatch of a payment via lnd.
+func (m *MockLND) SendPayment(ctx context.Context,
+	request lndclient.SendPaymentRequest) (chan lndclient.PaymentStatus,
+	chan error, error) {
+
+	args := m.Mock.MethodCalled(
+		"SendPayment", ctx, request,
+	)
+
+	payChan := args.Get(0).(chan lndclient.PaymentStatus)
+	errChan := args.Get(1).(chan error)
+
+	return payChan, errChan, args.Error(2)
+}
+
+// MockSendPayment primes our mock for a sendpayment call.
+func MockSendPayment(m *mock.Mock, request lndclient.SendPaymentRequest,
+	payChan chan lndclient.PaymentStatus, errChan chan error, err error) {
+
+	m.On(
+		"SendPayment", mock.Anything, request,
+	).Once().Return(
+		payChan, errChan, err,
+	)
+}
+
+// TrackPayment mocks dispatch of a payment via lnd.
+func (m *MockLND) TrackPayment(ctx context.Context, hash lntypes.Hash) (
+	chan lndclient.PaymentStatus, chan error, error) {
+
+	args := m.Mock.MethodCalled(
+		"TrackPayment", ctx, hash,
+	)
+
+	payChan := args.Get(0).(chan lndclient.PaymentStatus)
+	errChan := args.Get(1).(chan error)
+
+	return payChan, errChan, args.Error(2)
+}
+
+// MockTrackPayment primes our mock for a trackpayment call.
+func MockTrackPayment(m *mock.Mock, hash lntypes.Hash,
+	payChan chan lndclient.PaymentStatus, errChan chan error, err error) {
+
+	m.On(
+		"TrackPayment", mock.Anything, hash,
+	).Once().Return(
+		payChan, errChan, err,
 	)
 }
