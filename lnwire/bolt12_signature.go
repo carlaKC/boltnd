@@ -17,6 +17,9 @@ var (
 	// offerTag is the message tag used to tag signatures on offers.
 	offerTag = []byte("offer")
 
+	// invoiceTag is the message tag used to tag signatures on invoices.
+	invoiceTag = []byte("invoice")
+
 	// signatureTag is the field tag used to tag signatures (TLV type= 240)
 	// for offers.
 	signatureTag = []byte("signature")
