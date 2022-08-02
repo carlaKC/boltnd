@@ -15,6 +15,8 @@ service Offers {
 
     rpc GenerateBlindedRoute (GenerateBlindedRouteRequest)
         returns (GenerateBlindedRouteResponse);
+
+    rpc PayOffer (PayOfferRequest) returns (PayOfferResponse);
 }
 
 message SendOnionMessageRequest {
@@ -136,4 +138,19 @@ message GenerateBlindedRouteRequest {
 message GenerateBlindedRouteResponse {
     // A blinded route to our node.
     BlindedPath route = 1;
+}
+
+message PayOfferRequest {
+    // The encoded offer to be paid.
+    string offer = 1;
+
+    // The amount to pay for this offer, expressed in millisatoshis. This value
+    // must be at least the minimum amount specified in the offer.
+    uint64 amount_msat = 2;
+
+    // An optional note to include with the payment.
+    string payer_note = 3;
+}
+
+message PayOfferResponse {
 }
