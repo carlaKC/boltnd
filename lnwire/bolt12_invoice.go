@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
@@ -109,6 +110,11 @@ type Invoice struct {
 	// Signature is a signature over the tlv merkle root of the invoice's
 	// fields.
 	Signature *[64]byte
+
+	// MerkleRoot is the merkle root of all the non-signature tlvs included
+	// in the offer. This field isn't actually encoded in our tlv stream,
+	// but rather calculated from it.
+	MerkleRoot chainhash.Hash
 }
 
 // records returns a set of tlv records for all the non-nil invoice fields.
@@ -324,6 +330,23 @@ func DecodeInvoice(b []byte) (*Invoice, error) {
 	if _, ok := tlvMap[invSigType]; ok {
 		i.Signature = &signature
 	}
+
+	// We only want to calculate our merkle root from our populated tlv
+	// records and the unknown odd records that were parsed but not
+	// understood (by our code, since the sender would have included them
+	// in their root calculation).
+	populatedRecords, err := i.records()
+	if err != nil {
+		return nil, fmt.Errorf("get records: %w", err)
+	}
+
+	root, err := MerkleRoot(
+		append(populatedRecords, unknownRecordsFromParsed(tlvMap)...),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("merkle root: %w", err)
+	}
+	i.MerkleRoot = *root
 
 	return i, nil
 }
