@@ -54,6 +54,10 @@ type InvoiceRequest struct {
 	// TODO - add on decode
 	MerkleRoot chainhash.Hash
 }
+
+// TODO - fill in merk
+func (i *InvoiceRequest) Validate() error {
+	return nil
 }
 
 // records returns a set of records for all the non-nil fields in an invoice
