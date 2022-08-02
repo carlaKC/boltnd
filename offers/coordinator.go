@@ -9,13 +9,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/routes"
 	"github.com/lightninglabs/lndclient"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	lndwire "github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 )
 
@@ -104,6 +108,10 @@ type Coordinator struct {
 	// control loop to ensure consistency.
 	outboundOffers map[lntypes.Hash]*activeOfferState
 
+	// offerRequests is a channel that is used to deliver requests to
+	// pay offers to the coordinator's main loop.
+	offerRequests chan *offerRequest
+
 	// paymentResults is a channel used to deliver the results of
 	// asynchronous payments made to offer invoices to the coordinator's
 	// main loop.
@@ -132,10 +140,42 @@ func NewCoordinator(params chaincfg.Params, lnd LNDOffers,
 		onionMessenger:   onionMsgr,
 		routeGenerator:   routeGenerator,
 		outboundOffers:   make(map[lntypes.Hash]*activeOfferState),
+		offerRequests:    make(chan *offerRequest),
 		paymentResults:   make(chan *paymentResult),
 		incomingInvoices: make(chan []byte),
 		requestShutdown:  requestShutdown,
 		quit:             make(chan struct{}),
+	}
+}
+
+// offerRequest holds request to pay an offer and a response channel to pipe
+// results to the caller.
+type offerRequest struct {
+	// offer is the decoded offer that we wish to pay.
+	offer *lnwire.Offer
+
+	// amount is the amount to pay.
+	amount lndwire.MilliSatoshi
+
+	// payerNote is an arbitrary note from the sender.
+	payerNote string
+
+	// errChan is used to communicate errors to the caller.
+	errChan chan error
+}
+
+// newOfferRequest creates a new offer request.
+func newOfferRequest(o *lnwire.Offer, amount lndwire.MilliSatoshi,
+	payerNote string) *offerRequest {
+
+	return &offerRequest{
+		offer:     o,
+		amount:    amount,
+		payerNote: payerNote,
+
+		// Buffer the error channel by 1 so that we are not blocked
+		// on the recipient reading results.
+		errChan: make(chan error, 1),
 	}
 }
 
@@ -179,6 +219,10 @@ const (
 
 	// OfferStateFailed indicates that we failed to pay an offer's invoice.
 	OfferStateFailed
+
+	// OfferStateMiscFailure indicates that we experienced a failure along
+	// the way. TODO - make this better.
+	OfferStateMiscFailure
 )
 
 // activeOfferState represents an offer that is currently active.
@@ -192,6 +236,9 @@ type activeOfferState struct {
 
 	// state reflects the current state of the offer.
 	state OfferPayState
+
+	// errChan is a channel that can be used to pass errors to the caller.
+	errChan chan<- error
 }
 
 // Start runs the coordinator.
@@ -258,10 +305,106 @@ func (c *Coordinator) HandleInvoice(_ *lnwire.ReplyPath, _ []byte,
 	}
 }
 
+// PayOffer dispatches a request to the offer coordinator to pay an offer.
+func (c *Coordinator) PayOffer(offer *lnwire.Offer, amount lndwire.MilliSatoshi,
+	payerNote string) <-chan error {
+
+	request := newOfferRequest(offer, amount, payerNote)
+
+	// Do a quick check that this is a sane offer so that we don't need to
+	// bother handing off if it's invalid.
+	if err := c.checkOffer(offer); err != nil {
+		request.errChan <- err
+		return request.errChan
+	}
+
+	select {
+	// Deliver the offer request to the main loop.
+	case c.offerRequests <- request:
+		log.Debugf("Offer: %v delivered to main loop", offer.MerkleRoot)
+
+	// If we exit before the offer is picked up, immediately return an
+	/// error update.
+	case <-c.quit:
+		// We can send this error response directly into the error
+		// channel because we expect it to be buffered.
+		request.errChan <- ErrShuttingDown
+	}
+
+	return request.errChan
+}
+
+func (c *Coordinator) checkOffer(offer *lnwire.Offer) error {
+	if err := offer.Validate(); err != nil {
+		return fmt.Errorf("invalid offer: %w", err)
+	}
+
+	// If no chain hash is specified, it's implied that we're using bitcoin.
+	if offer.Chainhash == lntypes.ZeroHash {
+		return nil
+	}
+
+	if !bytes.Equal(offer.Chainhash[:], c.params.GenesisHash[:]) {
+		return fmt.Errorf("%w: offer: %x, chain: %x",
+			ErrChainhashMismatch, offer.Chainhash,
+			c.params.GenesisHash)
+	}
+
+	return nil
+}
+
 // handleOffers is the main goroutine that handles offer exchanges.
 func (c *Coordinator) handleOffers() error {
 	for {
 		select {
+		// Handle incoming requests to pay offers
+		case request := <-c.offerRequests:
+			_, ok := c.outboundOffers[request.offer.MerkleRoot]
+			if ok {
+				log.Errorf("Offer: %v already known",
+					request.offer.MerkleRoot)
+
+				continue
+			}
+
+			// Create an active offer and add it to our set of
+			// outbound offers.
+			activeOffer := &activeOfferState{
+				offer:   request.offer,
+				state:   OfferStateInitiated,
+				errChan: request.errChan,
+			}
+			c.outboundOffers[request.offer.MerkleRoot] = activeOffer
+
+			route, err := c.routeGenerator.ReplyPath(
+				context.Background(), nil,
+			)
+			if err != nil {
+				request.errChan <- err
+				continue
+			}
+
+			replyPath, err := blindedToReplyPath(route)
+			if err != nil {
+				request.errChan <- err
+				continue
+			}
+
+			// Dispatch a request for an invoice for the offer.
+			err = c.dispatchInvoiceRequest(
+				request.offer, replyPath, request.amount,
+				request.payerNote,
+			)
+			if err != nil {
+				request.errChan <- err
+				continue
+			}
+
+			// Once we've successfully dispatched an invoice
+			// request, we can update the offer's state to invoice
+			// requested.
+			activeOffer.state = OfferStateRequestSent
+
 		// Handle incoming invoices.
 		case invBytes := <-c.incomingInvoices:
 			// Decode the incoming invoice. Do not exit if we fail
@@ -311,6 +454,78 @@ func (c *Coordinator) handleOffers() error {
 			return ErrShuttingDown
 		}
 	}
+}
+
+// TODO - de-duplicate this
+func blindedToReplyPath(path *sphinx.BlindedPath) (*lnwire.ReplyPath, error) {
+	replyPath := &lnwire.ReplyPath{
+		FirstNodeID:   path.IntroductionPoint,
+		BlindingPoint: path.BlindingPoint,
+		Hops: make(
+			[]*lnwire.BlindedHop, len(path.BlindedHops)-1,
+		),
+	}
+
+	// We skip the first hop/data because this is the introduction node's
+	// blinded id.
+	for i := 1; i < len(path.BlindedHops); i++ {
+		replyPath.Hops[i-1] = &lnwire.BlindedHop{
+			BlindedNodeID: path.BlindedHops[i],
+			EncryptedData: path.EncryptedData[i],
+		}
+	}
+
+	return replyPath, nil
+}
+
+func (c *Coordinator) dispatchInvoiceRequest(offer *lnwire.Offer,
+	replyPath *lnwire.ReplyPath, amount lndwire.MilliSatoshi,
+	note string) error {
+
+	payerPrivkey, err := btcec.NewPrivateKey()
+	if err != nil {
+		return fmt.Errorf("payer privkey: %w", err)
+	}
+
+	invoiceReq, err := lnwire.NewInvoiceRequest(
+		offer, amount, 0, payerPrivkey.PubKey(), "",
+	)
+	if err != nil {
+		return fmt.Errorf("invoice request failed: %w", err)
+	}
+
+	digest := invoiceReq.SignatureDigest()
+	sig, err := schnorr.Sign(payerPrivkey, digest[:])
+	if err != nil {
+		return fmt.Errorf("invoice request signature: %w", err)
+	}
+
+	var sigBytes [64]byte
+	copy(sigBytes[:], sig.Serialize())
+
+	invoiceReq.Signature = &sigBytes
+
+	reqBytes, err := lnwire.EncodeInvoiceRequest(invoiceReq)
+	if err != nil {
+		return fmt.Errorf("invoice request encode: %w", err)
+	}
+
+	// Send an onion message to the peer that owns the offer, setting
+	// a reply path so that they an respond with an invoice.
+	req := onionmsg.NewSendMessageRequest(
+		offer.NodeID, replyPath, nil, []*lnwire.FinalHopPayload{
+			{
+				TLVType: lnwire.InvoiceRequestNamespaceType,
+				Value:   reqBytes,
+			},
+		}, false,
+	)
+	err = c.onionMessenger.SendMessage(context.Background(), req)
+	if err != nil {
+		return fmt.Errorf("onion message: %v", err)
+	}
+
+	return nil
 }
 
 // deliverPaymentResult delivers the outcome of a payment to our main control
