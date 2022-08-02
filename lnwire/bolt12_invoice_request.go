@@ -117,6 +117,14 @@ func NewInvoiceRequest(offer *Offer, amount lnwire.MilliSatoshi,
 	return request, nil
 }
 
+// TODO - rather pass a closure (or interface) to the above function to produce
+// signature when we produce the struct?
+// SignatureDigest returns the tagged digest that is signed for invoice
+// requests.
+func (i *InvoiceRequest) SignatureDigest() chainhash.Hash {
+	return signatureDigest(invoiceRequestTag, signatureTag, i.MerkleRoot)
+}
+
 // TODO - fill in merk
 func (i *InvoiceRequest) Validate() error {
 	return nil
