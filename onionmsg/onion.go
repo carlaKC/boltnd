@@ -133,7 +133,8 @@ func encodeBlindedData(nextHop *btcec.PublicKey) ([]byte, error) {
 // createOnionMessage creates an onion message, blinding the nodes in the path
 // provided and including relevant TLVs for blinded relay of messages.
 func createOnionMessage(path []*btcec.PublicKey,
-	sessionKey *btcec.PrivateKey) (*lnwire.OnionMessage, error) {
+	finalPayloads []*lnwire.FinalHopPayload, sessionKey *btcec.PrivateKey) (
+	*lnwire.OnionMessage, error) {
 
 	hopCount := len(path)
 	if hopCount < 1 {
@@ -153,7 +154,7 @@ func createOnionMessage(path []*btcec.PublicKey,
 		return nil, fmt.Errorf("blinded path: %w", err)
 	}
 
-	sphinxPath, err := blindedToSphinx(blindedPath, nil)
+	sphinxPath, err := blindedToSphinx(blindedPath, finalPayloads)
 	if err != nil {
 		return nil, fmt.Errorf("could not create sphinx path: %w", err)
 	}

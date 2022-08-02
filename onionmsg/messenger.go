@@ -164,11 +164,10 @@ var _ OnionMessenger = (*Messenger)(nil)
 // SendMessage sends an onion message to the peer provided. If we are not
 // currently connected to a peer, the messenger will directly connect to it
 // and send the message.
-//
-// Note that this API doesn't currently include a payload for the message, it
-// just sends an empty onion message.
-func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex) error {
-	msg, err := customOnionMessage(peer)
+func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
+	finalHopPayloads []*lnwire.FinalHopPayload) error {
+
+	msg, err := customOnionMessage(peer, finalHopPayloads)
 	if err != nil {
 		return fmt.Errorf("could not create message: %w", err)
 	}
@@ -259,7 +258,10 @@ func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
 
 // customOnionMessage creates an onion message to our peer and wraps it in
 // a custom lnd message.
-func customOnionMessage(peer route.Vertex) (*lndclient.CustomMessage, error) {
+func customOnionMessage(peer route.Vertex,
+	finalPayloads []*lnwire.FinalHopPayload) (*lndclient.CustomMessage,
+	error) {
+
 	pubkey, err := btcec.ParsePubKey(peer[:])
 	if err != nil {
 		return nil, fmt.Errorf("invalid pubkey: %w", err)
@@ -275,7 +277,7 @@ func customOnionMessage(peer route.Vertex) (*lndclient.CustomMessage, error) {
 	}
 
 	// Create and encode an onion message.
-	msg, err := createOnionMessage(path, sessionKey)
+	msg, err := createOnionMessage(path, finalPayloads, sessionKey)
 	if err != nil {
 		return nil, fmt.Errorf("onion message creation failed: %v", err)
 	}

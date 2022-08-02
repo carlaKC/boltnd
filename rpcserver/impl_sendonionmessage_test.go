@@ -43,7 +43,9 @@ func TestRPCSendOnionMessage(t *testing.T) {
 			name: "send message failed",
 			// Setup our mock to fail sending a message.
 			setupMock: func(m *mock.Mock) {
-				mockSendMessage(m, vertex, errors.New("mock"))
+				mockSendMessage(
+					m, vertex, nil, errors.New("mock"),
+				)
 			},
 			request: &offersrpc.SendOnionMessageRequest{
 				Pubkey: pubkeyBytes,
@@ -55,7 +57,7 @@ func TestRPCSendOnionMessage(t *testing.T) {
 			name: "send message succeeds",
 			// Setup our mock to successfully send the message.
 			setupMock: func(m *mock.Mock) {
-				mockSendMessage(m, vertex, nil)
+				mockSendMessage(m, vertex, nil, nil)
 			},
 			request: &offersrpc.SendOnionMessageRequest{
 				Pubkey: pubkeyBytes,

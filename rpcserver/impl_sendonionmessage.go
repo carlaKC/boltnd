@@ -25,7 +25,7 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 		return nil, err
 	}
 
-	err = s.onionMsgr.SendMessage(ctx, pubkey)
+	err = s.onionMsgr.SendMessage(ctx, pubkey, nil)
 	if err != nil {
 		return nil, status.Errorf(
 			codes.Internal, "send message failed: %v", err,

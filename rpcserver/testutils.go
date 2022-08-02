@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -69,16 +70,20 @@ func newOffersMock() *offersMock {
 }
 
 // SendMessage mocks sending a message.
-func (o *offersMock) SendMessage(ctx context.Context, peer route.Vertex) error {
-	args := o.Mock.MethodCalled("SendMessage", ctx, peer)
+func (o *offersMock) SendMessage(ctx context.Context, peer route.Vertex,
+	payloads []*lnwire.FinalHopPayload) error {
+
+	args := o.Mock.MethodCalled("SendMessage", ctx, peer, payloads)
 	return args.Error(0)
 }
 
 // mockSendMessage primes our mock to return the error provided when we call
 // send message with the peer provided.
-func mockSendMessage(m *mock.Mock, peer route.Vertex, err error) {
+func mockSendMessage(m *mock.Mock, peer route.Vertex,
+	payloads []*lnwire.FinalHopPayload, err error) {
+
 	m.On(
-		"SendMessage", mock.Anything, peer,
+		"SendMessage", mock.Anything, peer, payloads,
 	).Once().Return(
 		err,
 	)
