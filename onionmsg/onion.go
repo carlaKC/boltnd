@@ -67,23 +67,43 @@ func createPathToBlind(path []*btcec.PublicKey,
 }
 
 // blindedToSphinx converts the blinded path provided to a sphinx path that can
-// be wrapped up in an onion.
-func blindedToSphinx(blindedRoute *sphinx.BlindedPath) (*sphinx.PaymentPath,
-	error) {
+// be wrapped up in an onion, encoding the TLV payload for each hop along the
+// way.
+func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
+	finalPayloads []*lnwire.FinalHopPayload) (*sphinx.PaymentPath, error) {
 
 	var sphinxPath sphinx.PaymentPath
 
-	// Fill in the blinded node id and encrypted data for all hops, this
+	// Fill in the blinded node id and encrypted data for all hops. This
 	// requirement differs from blinded hops used for payments, where we
 	// don't use the blinded introduction node id. However, since onion
 	// messages are fully blinded by default, we use the blinded
 	// introduction node id.
 	for i := 0; i < len(blindedRoute.EncryptedData); i++ {
+		// Create an onion message payload with the encrypted data for
+		// this hop.
+		payload := &lnwire.OnionMessagePayload{
+			EncryptedData: blindedRoute.EncryptedData[i],
+		}
+
+		// If we're on the final hop, also include the tlvs intended
+		// for the final hop.
+		if i == len(blindedRoute.EncryptedData)-1 {
+			payload.FinalHopPayloads = finalPayloads
+		}
+
+		// Encode the tlv stream for inclusion in our message.
+		payloadTLVs, err := lnwire.EncodeOnionMessagePayload(payload)
+		if err != nil {
+			return nil, fmt.Errorf("payload: %v encode: %v", i,
+				err)
+		}
+
 		sphinxPath[i] = sphinx.OnionHop{
 			NodePub: *blindedRoute.BlindedHops[i],
 			HopPayload: sphinx.HopPayload{
 				Type:    sphinx.PayloadTLV,
-				Payload: blindedRoute.EncryptedData[i],
+				Payload: payloadTLVs,
 			},
 		}
 	}
@@ -133,7 +153,7 @@ func createOnionMessage(path []*btcec.PublicKey,
 		return nil, fmt.Errorf("blinded path: %w", err)
 	}
 
-	sphinxPath, err := blindedToSphinx(blindedPath)
+	sphinxPath, err := blindedToSphinx(blindedPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create sphinx path: %w", err)
 	}
