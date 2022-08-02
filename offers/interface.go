@@ -3,8 +3,10 @@ package offers
 import (
 	"context"
 
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lntypes"
+	lndwire "github.com/lightningnetwork/lnd/lnwire"
 )
 
 // LNDOffers is an interface describing the lnd dependencies that the offers
@@ -29,6 +31,11 @@ type OfferCoordinator interface {
 
 	// Stop shuts down the offer coordinator.
 	Stop() error
+
+	// PayOffer attempts to make a payment of the amount specified to the
+	// offer provided.
+	PayOffer(offer *lnwire.Offer, amount lndwire.MilliSatoshi,
+		payerNote string) <-chan error
 }
 
 // Compile time assertion that coordinator satisfies the OfferCoordinator
