@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/lnwire"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -54,6 +55,24 @@ var (
 	// ErrSignatureRequired is returned when an invoice request does not
 	// contain a signature.
 	ErrSignatureRequired = errors.New("signature required")
+
+	// ErrBelowMinAmount is returned if an attempt to make a request for
+	// less than the offer minimum is created.
+	ErrBelowMinAmount = errors.New("amount less than offer minimum")
+
+	// ErrOutsideQuantityRange is returned if a quantity outside of the
+	// offer's range is requested.
+	ErrOutsideQuantityRange = errors.New("quantity outside range")
+
+	// ErrNoQuantity is returned when an invoice request for a specific
+	// quantity is requested from an offer with no quantity tlvs specified.
+	ErrNoQuantity = errors.New("quantity requested for offer with no " +
+		"quantity")
+
+	// ErrQuantityRequired is returned when an invoice request does not
+	// specify quantity for an offer that provides a quantity range.
+	ErrQuantityRequired = errors.New("quantity set in offer but not " +
+		"request")
 )
 
 // InvoiceRequest represents a bolt 12 request for an invoice.
@@ -92,6 +111,70 @@ type InvoiceRequest struct {
 
 // Compile time check that invoice request implements the tlv tree interface.
 var _ tlvTree = (*InvoiceRequest)(nil)
+
+// NewInvoiceRequest returns a new invoice request for the offer provided. This
+// function does not produce a signature for the invoice, but it does calculate
+// its tlv merkle root.
+func NewInvoiceRequest(offer *Offer, amount lnwire.MilliSatoshi,
+	quantity uint64, payerKey *btcec.PublicKey, payerNote string) (
+	*InvoiceRequest, error) {
+
+	if amount < offer.MinimumAmount {
+		return nil, fmt.Errorf("%w: %v < %v", ErrBelowMinAmount, amount,
+			offer.MinimumAmount)
+	}
+
+	var (
+		haveMinQuantity = offer.QuantityMin != 0
+		haveMaxQuantity = offer.QuantityMax != 0
+
+		quantitySpecified = haveMinQuantity && haveMaxQuantity
+	)
+
+	// Fail if the offer has a quantity range but the request does not set
+	// quantity>0.
+	if quantitySpecified && quantity == 0 {
+		return nil, fmt.Errorf("%w: %v", ErrQuantityRequired, quantity)
+	}
+
+	// Fail if we're outside of the quantity range.
+	if haveMinQuantity && quantity < offer.QuantityMin {
+		return nil, fmt.Errorf("%w: %v < %v", ErrOutsideQuantityRange,
+			quantity, offer.QuantityMin)
+	}
+
+	if haveMaxQuantity && quantity > offer.QuantityMax {
+		return nil, fmt.Errorf("%w: %v > %v", ErrOutsideQuantityRange,
+			quantity, offer.QuantityMax)
+	}
+
+	// Fail if the offer does not have a quantity range but the request
+	// sets one.
+	if !quantitySpecified && quantity != 0 {
+		return nil, fmt.Errorf("%w: %v", ErrNoQuantity, quantity)
+	}
+
+	request := &InvoiceRequest{
+		OfferID:   offer.MerkleRoot,
+		Amount:    amount,
+		Features:  offer.Features,
+		Quantity:  quantity,
+		PayerKey:  payerKey,
+		PayerNote: payerNote,
+	}
+
+	records, err := request.records()
+	if err != nil {
+		return nil, fmt.Errorf("records: %w", err)
+	}
+
+	request.MerkleRoot, err = MerkleRoot(records)
+	if err != nil {
+		return nil, fmt.Errorf("merkle root: %v", err)
+	}
+
+	return request, nil
+}
 
 // Validate performs validation on an invoice request as described in the
 // specification.

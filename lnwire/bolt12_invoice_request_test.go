@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -222,4 +223,123 @@ func TestInvoiceRequestValidation(t *testing.T) {
 		})
 	}
 
+}
+
+// TestNewInvoiceRequest tests creation of an invoice request for a specific
+// offer.
+func TestNewInvoiceRequest(t *testing.T) {
+	var (
+		pubkeys = testutils.GetPubkeys(t, 2)
+		offer   = &Offer{
+			MinimumAmount: lnwire.MilliSatoshi(100),
+			Description:   "offer description",
+			Issuer:        "offer issuer",
+			QuantityMin:   2,
+			QuantityMax:   4,
+			NodeID:        pubkeys[0],
+		}
+
+		validRequest = &InvoiceRequest{
+			Amount:    offer.MinimumAmount + 5,
+			Quantity:  offer.QuantityMin + 1,
+			PayerKey:  pubkeys[1],
+			PayerNote: "note",
+		}
+
+		offerNoQuantity = &Offer{
+			MinimumAmount: lnwire.MilliSatoshi(100),
+			Description:   "offer description",
+			Issuer:        "offer issuer",
+			QuantityMin:   0,
+			QuantityMax:   0,
+			NodeID:        pubkeys[0],
+		}
+	)
+
+	// Calculate offer ID for our offer.
+	records, err := offer.records()
+	require.NoError(t, err, "offer records")
+
+	offerID, err := MerkleRoot(records)
+	require.NoError(t, err, "offer root")
+
+	offer.MerkleRoot = offerID
+	validRequest.OfferID = offerID
+
+	// Calculate merkle root for our valid request.
+	records, err = validRequest.records()
+	require.NoError(t, err, "request records")
+
+	validRequest.MerkleRoot, err = MerkleRoot(records)
+	require.NoError(t, err, "request root")
+
+	tests := []struct {
+		name      string
+		offer     *Offer
+		amount    lnwire.MilliSatoshi
+		quantity  uint64
+		payerKey  *btcec.PublicKey
+		payerNote string
+		err       error
+		expected  *InvoiceRequest
+	}{
+		{
+			name:   "amount too small",
+			offer:  offer,
+			amount: offer.MinimumAmount - 10,
+			err:    ErrBelowMinAmount,
+		},
+		{
+			name:     "below min quantity",
+			offer:    offer,
+			amount:   offer.MinimumAmount,
+			quantity: offer.QuantityMin - 1,
+			err:      ErrOutsideQuantityRange,
+		},
+		{
+			name:     "above max quantity",
+			offer:    offer,
+			amount:   offer.MinimumAmount,
+			quantity: offer.QuantityMax + 1,
+			err:      ErrOutsideQuantityRange,
+		},
+		{
+			name:     "no quantity when required",
+			offer:    offer,
+			amount:   offer.MinimumAmount,
+			quantity: 0,
+			err:      ErrQuantityRequired,
+		},
+		{
+			name:     "quantity when not required",
+			offer:    offerNoQuantity,
+			amount:   offerNoQuantity.MinimumAmount,
+			quantity: 1,
+			err:      ErrNoQuantity,
+		},
+		{
+			name:      "request ok",
+			offer:     offer,
+			amount:    offer.MinimumAmount + 5,
+			quantity:  offer.QuantityMin + 1,
+			payerKey:  pubkeys[1],
+			payerNote: "note",
+			err:       nil,
+			expected:  validRequest,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			actual, err := NewInvoiceRequest(
+				testCase.offer, testCase.amount,
+				testCase.quantity, testCase.payerKey,
+				testCase.payerNote,
+			)
+			require.True(t, errors.Is(err, testCase.err))
+			require.Equal(t, testCase.expected, actual)
+		})
+	}
 }
