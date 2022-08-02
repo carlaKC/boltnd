@@ -18,6 +18,9 @@ type Coordinator struct {
 	started int32 // to be used atomically
 	stopped int32 // to be used atomically
 
+	// lnd provides the lnd apis required for offers.
+	lnd LNDOffers
+
 	// requestShutdown is called when the messenger experiences an error to
 	// signal to calling code that it should gracefully exit.
 	requestShutdown func(err error)
@@ -27,8 +30,11 @@ type Coordinator struct {
 }
 
 // NewCoordinator creates a new offer coordinator.
-func NewCoordinator(requestShutdown func(err error)) *Coordinator {
+func NewCoordinator(lnd LNDOffers,
+	requestShutdown func(err error)) *Coordinator {
+
 	return &Coordinator{
+		lnd:             lnd,
 		requestShutdown: requestShutdown,
 		quit:            make(chan struct{}),
 	}

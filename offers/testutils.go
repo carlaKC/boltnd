@@ -3,6 +3,7 @@ package offers
 import (
 	"testing"
 
+	"github.com/carlakc/boltnd/testutils"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -11,6 +12,7 @@ import (
 // concerning the offer coordinator.
 type offerCoordinatorTest struct {
 	t           *testing.T
+	lnd         *testutils.MockLND
 	mock        *mock.Mock
 	coordinator *Coordinator
 }
@@ -18,10 +20,13 @@ type offerCoordinatorTest struct {
 func newOfferCoordinatorTest(t *testing.T) *offerCoordinatorTest {
 	testHelper := &offerCoordinatorTest{
 		t:    t,
+		lnd:  testutils.NewMockLnd(),
 		mock: &mock.Mock{},
 	}
 
-	testHelper.coordinator = NewCoordinator(testHelper.gracefulShutdown)
+	testHelper.coordinator = NewCoordinator(
+		testHelper.lnd, testHelper.gracefulShutdown,
+	)
 
 	return testHelper
 }
@@ -36,6 +41,9 @@ func (o *offerCoordinatorTest) stop() {
 
 	// Assert that we've made all the mocked calls we expect.
 	o.mock.AssertExpectations(o.t)
+
+	// Assert that our lnd mock has also had all the calls we expect.
+	o.lnd.Mock.AssertExpectations(o.t)
 }
 
 // gracefulShutdown mocks a request for graceful shutdown due to the error
