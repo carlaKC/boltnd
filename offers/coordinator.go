@@ -298,7 +298,10 @@ func (c *Coordinator) handleOffers() error {
 
 			_, ok := c.outboundOffers[hash]
 			if ok {
-				// error out
+				// We should be sending this to the offer.
+				log.Errorf("offer: %v already registered",
+					hash)
+				continue
 			}
 
 			// Create an active offer and add it to our set of
