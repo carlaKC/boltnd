@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
@@ -174,6 +175,12 @@ func NewInvoiceRequest(offer *Offer, amount lnwire.MilliSatoshi,
 	}
 
 	return request, nil
+}
+
+// SignatureDigest returns the tagged digest that is signed for invoice
+// requests.
+func (i *InvoiceRequest) SignatureDigest() chainhash.Hash {
+	return signatureDigest(invoiceRequestTag, signatureTag, i.MerkleRoot)
 }
 
 // Validate performs validation on an invoice request as described in the
