@@ -12,6 +12,8 @@ service Offers {
 
     rpc SubscribeOnionPayload (SubscribeOnionPayloadRequest)
         returns (stream SubscribeOnionPayloadResponse);
+
+    rpc PayOffer (PayOfferRequest) returns (PayOfferResponse);
 }
 
 message SendOnionMessageRequest {
@@ -90,4 +92,19 @@ message SubscribeOnionPayloadResponse {
     // Value is the raw bytes extracted from the tlv type that the subscription
     // is for.
     bytes value = 1;
+}
+
+message PayOfferRequest {
+    // The encoded offer to be paid.
+    string offer = 1;
+
+    // The amount to pay for this offer, expressed in millisatoshis. This value
+    // must be at least the minimum amount specified in the offer.
+    uint64 amount_msat = 2;
+
+    // An optional note to include with the payment.
+    string payer_note = 3;
+}
+
+message PayOfferResponse {
 }
