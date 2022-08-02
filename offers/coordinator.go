@@ -49,6 +49,11 @@ var (
 	ErrAmountIncorrect = errors.New("invoice amount < offer minimum")
 )
 
+// SendMessage is the function signature used to send messages over an
+// abstracted messaging layer.
+type SendMessage func(ctx context.Context, peer route.Vertex,
+	finalPayloads []*lnwire.FinalHopPayload) error
+
 // Coordinator manages the exchange of offer-related messages and payment of
 // invoices.
 type Coordinator struct {
