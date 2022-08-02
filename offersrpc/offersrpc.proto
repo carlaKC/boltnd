@@ -20,6 +20,13 @@ message SendOnionMessageRequest {
     // future iterations this API will find a route to the peer and send the
     // message along a blinded path, protecting sender identity.
     bytes pubkey = 1;
+
+    // A map of TLV type to encoded value to deliver to the target node. Note
+    // that the bytes for each payload will be written directly, so should
+    // already be encoded as the recipient is expecting. TLVs >= 64 are
+    // reserved for the final hop, so all values in the map must be in this
+    // in this range.
+    map<uint64, bytes> final_payloads = 2;
 }
 
 message SendOnionMessageResponse {
