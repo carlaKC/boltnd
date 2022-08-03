@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	"github.com/carlakc/boltnd/offers"
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/routes"
@@ -41,6 +42,9 @@ type Server struct {
 
 	// routeGenerator produces blinded paths to our node.
 	routeGenerator routes.Generator
+
+	// offerCoordinator manages the payment lifecycle of offers.
+	offerCoordinator offers.OfferCoordinator
 
 	// ready is closed once the server is fully set up and ready to operate.
 	// This is required because we only receive our lnd dependency on
@@ -87,7 +91,7 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 		lnd.Client, nodeKeyECDH.PubKey(),
 	)
 
-	// Finally setup an onion messenger using the onion router.
+	// Setup an onion messenger using the onion router.
 	s.onionMsgr = onionmsg.NewOnionMessenger(
 		lnd.ChainParams, lnd.Client, nodeKeyECDH, s.requestShutdown,
 	)
@@ -96,6 +100,13 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 		return fmt.Errorf("could not start onion messenger: %w", err)
 	}
 
+	s.offerCoordinator = offers.NewCoordinator(
+		lnd.Router, s.onionMsgr, s.requestShutdown,
+	)
+
+	if err := s.offerCoordinator.Start(); err != nil {
+		return fmt.Errorf("could not start offer coordinator: %w", err)
+	}
 	close(s.ready)
 
 	return nil
@@ -112,6 +123,13 @@ func (s *Server) Stop() error {
 
 	// Signal to goroutines to shut down.
 	close(s.quit)
+
+	if s.offerCoordinator != nil {
+		if err := s.offerCoordinator.Stop(); err != nil {
+			return fmt.Errorf("could not stop offer coordinator: "+
+				"%w", err)
+		}
+	}
 
 	// Shut down onion messenger if non-nil.
 	if s.onionMsgr != nil {
