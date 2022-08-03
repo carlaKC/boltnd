@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	"github.com/carlakc/boltnd/lnwire"
+	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 type serverTest struct {
@@ -62,6 +64,10 @@ type offersMock struct {
 	// Embed the onion messenger interface so that all functionality is
 	// included.
 	onionmsg.OnionMessenger
+
+	// Embed the server stream interface so that all functionality is
+	// included.
+	grpc.ServerStream
 }
 
 func newOffersMock() *offersMock {
@@ -119,6 +125,35 @@ func (o *offersMock) DeregisterHandler(tlvType tlv.Type) error {
 func mockDeregisterHandler(m *mock.Mock, tlvType tlv.Type, err error) {
 	m.On(
 		"DeregisterHandler", tlvType,
+	).Once().Return(
+		err,
+	)
+}
+
+// Context mocks querying a grpc stream for its context.
+func (o *offersMock) Context() context.Context {
+	args := o.Mock.MethodCalled("Context")
+	return args.Get(0).(context.Context)
+}
+
+// mockContext primes our mock to return the context provided.
+func mockContext(m *mock.Mock, ctx context.Context) {
+	m.On("Context").Once().Return(ctx)
+}
+
+// Send mocks sending responses into an onion payload subscription stream.
+func (o *offersMock) Send(resp *offersrpc.SubscribeOnionPayloadResponse) error {
+	args := o.Mock.MethodCalled("Send", resp)
+	return args.Error(0)
+}
+
+// mockOnionPayloadSend primes our mock to be called to send the request
+// provided into an onion payload subscription stream.
+func mockOnionPayloadSend(m *mock.Mock,
+	resp *offersrpc.SubscribeOnionPayloadResponse, err error) {
+
+	m.On(
+		"Send", resp,
 	).Once().Return(
 		err,
 	)

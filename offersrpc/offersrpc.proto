@@ -9,6 +9,9 @@ service Offers {
         returns (SendOnionMessageResponse);
 
     rpc DecodeOffer (DecodeOfferRequest) returns (DecodeOfferResponse);
+
+    rpc SubscribeOnionPayload (SubscribeOnionPayloadRequest)
+        returns (stream SubscribeOnionPayloadResponse);
 }
 
 message SendOnionMessageRequest {
@@ -72,4 +75,19 @@ message Offer {
     // The 64 byte bip340 hex-encoded signature for the offer, generated using
     // node_id's corresponding private key.
     string signature = 9;
+}
+
+message SubscribeOnionPayloadRequest {
+    // Onion messages reserve tlv values 64 and above for message intended for
+    // the final node. These tlv records are considered "sub-namespaces", which
+    // themselves carry a tlv stream for the end application. The tlv type
+    // provided here will register a subscription for any onion messages that
+    // are delivered to our node that populate the tlv type specified.
+    uint64 tlv_type = 1;
+}
+
+message SubscribeOnionPayloadResponse {
+    // Value is the raw bytes extracted from the tlv type that the subscription
+    // is for.
+    bytes value = 1;
 }
