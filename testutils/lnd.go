@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
 )
@@ -170,5 +171,51 @@ func MockDeriveSharedKey(m *mock.Mock, ephemeral *btcec.PublicKey,
 		"DeriveSharedKey", mock.Anything, ephemeral, locator,
 	).Once().Return(
 		key, err,
+	)
+}
+
+// SendPayment mocks sending a payment via lnd.
+func (m *MockLND) SendPayment(ctx context.Context,
+	request lndclient.SendPaymentRequest) (chan lndclient.PaymentStatus,
+	chan error, error) {
+
+	args := m.Mock.MethodCalled("SendPayment", ctx, request)
+
+	return args.Get(0).(chan lndclient.PaymentStatus),
+		args.Get(1).(chan error), args.Error(2)
+}
+
+// MockSendPayment primes our mock to return the update channels and error
+// provided when a payment with the request specified is made via the mock.
+func MockSendPayment(m *mock.Mock, request lndclient.SendPaymentRequest,
+	statusUpdates chan lndclient.PaymentStatus, errChan chan error,
+	err error) {
+
+	m.On(
+		"SendPayment", mock.Anything, request,
+	).Once().Return(
+		statusUpdates, errChan, err,
+	)
+}
+
+// TrackPayment mocks tracking a payment.
+func (m *MockLND) TrackPayment(ctx context.Context, hash lntypes.Hash) (
+	chan lndclient.PaymentStatus, chan error, error) {
+
+	args := m.Mock.MethodCalled("TrackPayment", ctx, hash)
+
+	return args.Get(0).(chan lndclient.PaymentStatus),
+		args.Get(1).(chan error), args.Error(2)
+}
+
+// MockTrackPayment primes our mock to return the update channel provided
+// when a payment with the hash specified is tracked.
+func MockTrackPayment(m *mock.Mock, hash lntypes.Hash,
+	updates chan lndclient.PaymentStatus, errChan chan error, err error) {
+
+	m.On(
+		"TrackPayment", mock.Anything, hash,
+	).Once().Return(
+		updates, errChan, err,
 	)
 }
