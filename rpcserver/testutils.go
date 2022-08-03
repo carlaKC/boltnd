@@ -8,6 +8,7 @@ import (
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -84,6 +85,40 @@ func mockSendMessage(m *mock.Mock, peer route.Vertex,
 
 	m.On(
 		"SendMessage", mock.Anything, peer, payloads,
+	).Once().Return(
+		err,
+	)
+}
+
+// RegisterHandler mocks registering a handler.
+func (o *offersMock) RegisterHandler(tlvType tlv.Type,
+	handler onionmsg.OnionMessageHandler) error {
+
+	args := o.Mock.MethodCalled("RegisterHandler", tlvType, handler)
+	return args.Error(0)
+}
+
+// mockRegisterHandler primes our mock to return the error provided when a call
+// to register handler with tlvType (and any handler function) is called.
+func mockRegisterHandler(m *mock.Mock, tlvType tlv.Type, err error) {
+	m.On(
+		"RegisterHandler", tlvType, mock.Anything,
+	).Once().Return(
+		err,
+	)
+}
+
+// DeregisterHandler mocks deregistering a handler.
+func (o *offersMock) DeregisterHandler(tlvType tlv.Type) error {
+	args := o.Mock.MethodCalled("DeregisterHandler", tlvType)
+	return args.Error(0)
+}
+
+// mockDeregisterHandler primes our mock to return the error provided when a
+// call to dereigster handler with tlvType is made.
+func mockDeregisterHandler(m *mock.Mock, tlvType tlv.Type, err error) {
+	m.On(
+		"DeregisterHandler", tlvType,
 	).Once().Return(
 		err,
 	)
