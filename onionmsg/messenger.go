@@ -24,6 +24,18 @@ const (
 )
 
 var (
+	// ErrNotStarted is returned if the messenger hasn't been started yet
+	// and can't perform an operation.
+	ErrNotStarted = errors.New("messenger not started")
+
+	// ErrHandlerNotFound is returned when we try to de-register a handler
+	// that isn't currently registered.
+	ErrHandlerNotFound = errors.New("handler not found")
+
+	// ErrHandlerRegistered is returned when we try to register a handler
+	// for a type that already exists.
+	ErrHandlerRegistered = errors.New("handler already registered")
+
 	// ErrNoAddresses is returned when we can't find a node's address in the
 	// public graph.
 	ErrNoAddresses = errors.New("no advertised addresses")
@@ -63,6 +75,38 @@ var (
 // encrypted data and value of the final hop's tlv as arguments.
 type OnionMessageHandler func(*lnwire.ReplyPath, []byte, []byte) error
 
+// registerHandler coordinates the (de)registration of handlers for tlv
+// namespaces in the reserved final hop payload range.
+type registerHandler struct {
+	// tlvType is the tlv type that the handler is for. This value must
+	// be within the final hop payload range (>=64).
+	tlvType tlv.Type
+
+	// handler is the handler to register, this may be nil on
+	// de-registration.
+	handler OnionMessageHandler
+
+	// deregister is set to true when we are removing a handler.
+	deregister bool
+
+	// errChan is used to communicate errors back to the caller. On
+	// completion of (de)registration, we expect this channel to be closed.
+	errChan chan error
+}
+
+func newRegisterHandler(tlvType tlv.Type, handler OnionMessageHandler,
+	dergister bool) *registerHandler {
+
+	return &registerHandler{
+		tlvType:    tlvType,
+		handler:    handler,
+		deregister: dergister,
+		// Buffer the channel by 1 so that we are not blocked on the
+		// caller consuming from the channel.
+		errChan: make(chan error, 1),
+	}
+}
+
 // Messenger houses the functionality to send and receive onion messages.
 type Messenger struct {
 	started int32 // to be used atomically
@@ -86,6 +130,10 @@ type Messenger struct {
 	// hop payloads.
 	onionMsgHandlers map[tlv.Type]OnionMessageHandler
 
+	// handlerRegistration is a channel used to coordinate message handler
+	// registration (and de-registration).
+	handlerRegistration chan *registerHandler
+
 	// requestShutdown is called when the messenger experiences an error to
 	// signal to calling code that it should gracefully exit.
 	requestShutdown func(err error)
@@ -104,11 +152,12 @@ func NewOnionMessenger(params *chaincfg.Params, lnd LndOnionMsg,
 		router: sphinx.NewRouter(
 			nodeKeyECDH, params, sphinx.NewMemoryReplayLog(),
 		),
-		lookupPeerBackoff:  lookupPeerBackoffDefault,
-		lookupPeerAttempts: lookupPeerAttemptsDefault,
-		onionMsgHandlers:   make(map[tlv.Type]OnionMessageHandler),
-		requestShutdown:    shutdown,
-		quit:               make(chan struct{}),
+		lookupPeerBackoff:   lookupPeerBackoffDefault,
+		lookupPeerAttempts:  lookupPeerAttemptsDefault,
+		onionMsgHandlers:    make(map[tlv.Type]OnionMessageHandler),
+		handlerRegistration: make(chan *registerHandler),
+		requestShutdown:     shutdown,
+		quit:                make(chan struct{}),
 	}
 }
 
@@ -157,8 +206,74 @@ func (m *Messenger) Stop() error {
 	return nil
 }
 
+// hasStarted returns a boolean indicating whether the messenger has been
+// started.
+func (m *Messenger) hasStarted() bool {
+	return atomic.LoadInt32(&m.started) == 1
+}
+
 // Compile time check that Messenger satisfies the OnionMessenger interface.
 var _ OnionMessenger = (*Messenger)(nil)
+
+// RegisterHandler connects the handler provided to a tlv type in the final
+// hop payload range in onion messages. This function would block if the
+// messenger is not yet started, so we fail any calls before startup.
+func (m *Messenger) RegisterHandler(tlvType tlv.Type,
+	handler OnionMessageHandler) error {
+
+	request := newRegisterHandler(tlvType, handler, false)
+	return m.handleRegistration(request, "register")
+}
+
+// Deregister removes the handler for a specific tlv type.
+func (m *Messenger) DeregisterHandler(tlvType tlv.Type) error {
+	request := newRegisterHandler(tlvType, nil, true)
+	return m.handleRegistration(request, "deregister")
+}
+
+// handleRegistration manages handoff and response receipt with the main event
+// loop for (de)registration of handlers. An action string is provided to add
+// context to our logging (ie, indicate whether we're registering or
+// deregistering).
+func (m *Messenger) handleRegistration(request *registerHandler,
+	action string) error {
+
+	if err := lnwire.ValidateFinalPayload(request.tlvType); err != nil {
+		return fmt.Errorf("invalid payload: %w", err)
+	}
+
+	if !m.hasStarted() {
+		return fmt.Errorf("%w: can't %v handler: %v",
+			ErrNotStarted, action, request.tlvType)
+	}
+
+	// Deliver the registration to the main event loop.
+	select {
+	case m.handlerRegistration <- request:
+
+	case <-m.quit:
+		return fmt.Errorf("%w: could not %v: %v",
+			ErrShuttingDown, action, request.tlvType)
+	}
+
+	// Wait for a response from the main loop, or exit if we're shutting
+	// down.
+	select {
+	// We either expect to receive an error (on failure), or for the error
+	// channel to be closed to indicate that we're registered.
+	case err, ok := <-request.errChan:
+		if !ok {
+			return nil
+		}
+
+		return fmt.Errorf("%w: %v failed: %v", err, action,
+			request.tlvType)
+
+	case <-m.quit:
+		return fmt.Errorf("%w: no %v response  %v",
+			ErrShuttingDown, action, request.tlvType)
+	}
+}
 
 // SendMessage sends an onion message to the peer provided. If we are not
 // currently connected to a peer, the messenger will directly connect to it
@@ -306,6 +421,19 @@ func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 
 	for {
 		select {
+		// Handling incoming requests to add/remove final payload tlv
+		// handlers.
+		case request := <-m.handlerRegistration:
+			err := m.registerHandler(request)
+			// Return an error on failure, or close the error
+			// channel to indicate that we've successfully
+			// completed.
+			if err != nil {
+				request.errChan <- err
+			} else {
+				close(request.errChan)
+			}
+
 		case msg, ok := <-msgChan:
 			// If our message channel has been closed, the stream
 			// has exited.
@@ -377,6 +505,35 @@ func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 			return ErrShuttingDown
 		}
 	}
+}
+
+// registerHandler adds and removes handlers from the messenger.
+func (m *Messenger) registerHandler(request *registerHandler) error {
+	_, ok := m.onionMsgHandlers[request.tlvType]
+
+	// If we're deregistering, fail if we don't have a handler for the
+	// tlv type. Otherwise remove the handler and return without error.
+	if request.deregister {
+		if !ok {
+			return fmt.Errorf("%w: %v", ErrHandlerNotFound,
+				request.tlvType)
+		}
+
+		delete(m.onionMsgHandlers, request.tlvType)
+		return nil
+	}
+
+	// If we're registering a type that already has a handler, fail
+	// registration.
+	if ok {
+		return fmt.Errorf("%w: %v", ErrHandlerRegistered,
+			request.tlvType)
+	}
+
+	// Otherwise, just add the handler and return with a nil error.
+	m.onionMsgHandlers[request.tlvType] = request.handler
+
+	return nil
 }
 
 // processOnion uses the messenger's router to process onion messages.

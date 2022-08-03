@@ -758,3 +758,78 @@ func testReceiveOnionMessages(t *testing.T, privkey *btcec.PrivateKey,
 		}
 	}
 }
+
+// TestHandleRegistration tests registration of handlers for tlv payloads.
+func TestHandleRegistration(t *testing.T) {
+	var (
+		invalidTlv tlv.Type = 10
+		validTlv   tlv.Type = 100
+
+		handler = func(*lnwire.ReplyPath, []byte, []byte) error {
+			return nil
+		}
+
+		nodeKeyECDH = &sphinx.PrivKeyECDH{
+			PrivKey: testutils.GetPrivkeys(t, 1)[0],
+		}
+	)
+
+	// Assert that our test tlv values have the validity we expect.
+	require.Nil(t, lnwire.ValidateFinalPayload(validTlv))
+
+	err := lnwire.ValidateFinalPayload(invalidTlv)
+	require.True(t, errors.Is(err, lnwire.ErrNotFinalPayload))
+
+	// Setups a mock lnd. We need this to subscribe to incoming messages,
+	// even though we're not testing message handling in this test. W
+	lnd := testutils.NewMockLnd()
+	defer lnd.Mock.AssertExpectations(t)
+
+	// Prime our mock for our startup call, using nil channels because we
+	// won't actually deliver messages.
+	testutils.MockSubscribeCustomMessages(
+		lnd.Mock, nil, nil, nil,
+	)
+
+	// Create a messenger, but don't start it yet.
+	messenger := NewOnionMessenger(
+		&chaincfg.RegressionNetParams, lnd, nodeKeyECDH, nil,
+	)
+
+	// Assert the registration fails if we're not started.
+	err = messenger.RegisterHandler(validTlv, handler)
+	require.True(t, errors.Is(err, ErrNotStarted), "err: %v", err.Error())
+
+	// Start our messenger. We'll shut it down manually later, so we don't
+	// defer stop here.
+	require.NoError(t, messenger.Start(), "start messenger")
+
+	// Now that we're started, we should be able to register with no issue.
+	err = messenger.RegisterHandler(validTlv, handler)
+	require.NoError(t, err, "valid tlv register")
+
+	// Try to re-register with the same type, we should fail.
+	err = messenger.RegisterHandler(validTlv, handler)
+	require.True(t, errors.Is(err, ErrHandlerRegistered))
+
+	// Try to register a handler for an out-of-range tlv type, expect
+	// failure.
+	err = messenger.RegisterHandler(invalidTlv, handler)
+	require.True(t, errors.Is(err, lnwire.ErrNotFinalPayload))
+
+	// Try to de-register our existing handler, we should succeed.
+	err = messenger.DeregisterHandler(validTlv)
+	require.NoError(t, err)
+
+	// Try to de-register a handler that's no longer registered, we should
+	// get an error.
+	err = messenger.DeregisterHandler(validTlv)
+	require.True(t, errors.Is(err, ErrHandlerNotFound))
+
+	// Shut down our messenger to test registration requests during
+	// shutdown.
+	require.NoError(t, messenger.Stop(), "stop messenger")
+
+	err = messenger.RegisterHandler(validTlv, handler)
+	require.True(t, errors.Is(err, ErrShuttingDown))
+}
