@@ -399,7 +399,7 @@ func TestHandlePaymentResult(t *testing.T) {
 
 	// Create a coordinator, we don't need any deps because we're just
 	// testing one internal function.
-	coordinator := NewCoordinator(nil, nil)
+	coordinator := NewCoordinator(nil, nil, nil)
 
 	// First, test payment results for an unknown offer.
 	err = coordinator.handlePaymentResult(id1, true)
