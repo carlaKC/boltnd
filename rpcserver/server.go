@@ -16,6 +16,12 @@ import (
 // Compile time check that this server implements our grpc server.
 var _ offersrpc.OffersServer = (*Server)(nil)
 
+var (
+	// ErrShuttingDown is returned when an operation is aborted because
+	// the server is shutting down.
+	ErrShuttingDown = status.Errorf(codes.Aborted, "server shutting down")
+)
+
 // Server implements our offersrpc server.
 type Server struct {
 	started int32 // to be used atomically
@@ -37,6 +43,10 @@ type Server struct {
 	// Start().
 	ready chan (struct{})
 
+	// quit indicates to the server's goroutines that it is time to shut
+	// down.
+	quit chan (struct{})
+
 	// requestShutdown is called when the messenger experiences an error to
 	// signal to calling code that it should gracefully exit.
 	requestShutdown func(err error)
@@ -48,6 +58,7 @@ type Server struct {
 func NewServer(shutdown func(error)) (*Server, error) {
 	return &Server{
 		ready:           make(chan struct{}),
+		quit:            make(chan struct{}),
 		requestShutdown: shutdown,
 	}, nil
 }
@@ -90,6 +101,9 @@ func (s *Server) Stop() error {
 
 	log.Info("Stopping rpc server")
 	defer log.Info("Stopped rpc server")
+
+	// Signal to goroutines to shut down.
+	close(s.quit)
 
 	// Shut down onion messenger if non-nil.
 	if s.onionMsgr != nil {

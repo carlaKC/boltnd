@@ -13,4 +13,8 @@ var RPCServerPermissions = map[string][]bakery.Op{
 		Entity: "offchain",
 		Action: "read",
 	}},
+	"/offersrpc.Offers/SubscribeOnionPayload": {{
+		Entity: "offchain",
+		Action: "read",
+	}},
 }
