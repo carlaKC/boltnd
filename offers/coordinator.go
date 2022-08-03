@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/carlakc/boltnd/lnwire"
+	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -57,6 +58,10 @@ type Coordinator struct {
 	// lnd provides the lnd apis required for offers.
 	lnd LNDOffers
 
+	// onionMessenger provides the external onion messaging functionality
+	// required for offers.
+	onionMessenger onionmsg.OnionMessenger
+
 	// outboundOffers maps an offer ID to the current state of the offer
 	// exchange. This map should *only* be accessed by the handleOffers
 	// control loop to ensure consistency.
@@ -80,11 +85,12 @@ type Coordinator struct {
 }
 
 // NewCoordinator creates a new offer coordinator.
-func NewCoordinator(lnd LNDOffers,
+func NewCoordinator(lnd LNDOffers, onionMsgr onionmsg.OnionMessenger,
 	requestShutdown func(err error)) *Coordinator {
 
 	return &Coordinator{
 		lnd:              lnd,
+		onionMessenger:   onionMsgr,
 		outboundOffers:   make(map[lntypes.Hash]*activeOfferState),
 		paymentResults:   make(chan *paymentResult),
 		incomingInvoices: make(chan []byte),
@@ -150,6 +156,16 @@ func (c *Coordinator) Start() error {
 		return errors.New("coordinator already started")
 	}
 
+	// Register our invoice handler to manage all incoming invoices via
+	// onion messages.
+	if err := c.onionMessenger.RegisterHandler(
+		lnwire.InvoiceNamespaceType,
+		c.HandleInvoice,
+	); err != nil {
+		return fmt.Errorf("could not register invoice handler: %w",
+			err)
+	}
+
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -169,7 +185,16 @@ func (c *Coordinator) Stop() error {
 		return fmt.Errorf("coordinator already stopped")
 	}
 
+	// Signal all goroutines to stop.
 	close(c.quit)
+
+	// De-register our invoice handler.
+	err := c.onionMessenger.DeregisterHandler(lnwire.InvoiceNamespaceType)
+	if err != nil {
+		return fmt.Errorf("deregister invoice hander: %w", err)
+	}
+
+	// Wait for goroutines to exit.
 	c.wg.Wait()
 
 	return nil
