@@ -4,9 +4,11 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/tlv"
 )
 
 // LndOnionMsg is an interface describing the lnd dependencies that the onionmsg
@@ -55,6 +57,18 @@ type OnionMessenger interface {
 	// Stop the onion messenger, blocking until all goroutines exit.
 	Stop() error
 
-	// SendMessage sends an onion message to the peer specified.
-	SendMessage(ctx context.Context, peer route.Vertex) error
+	// SendMessage sends an onion message to the peer specified. A set of
+	// optional TLVs for the target peer can be included in final payloads.
+	SendMessage(ctx context.Context, peer route.Vertex,
+		finalPayloads []*lnwire.FinalHopPayload) error
+
+	// RegisterHandler adds a handler onion message payloads delivered to
+	// our node for the tlv type provided.
+	// Note: this function will fail if the messenger has not been started.
+	RegisterHandler(tlvType tlv.Type, handler OnionMessageHandler) error
+
+	// DeregisterHandler removes a handler for onion message payloads for
+	// the tlv type provided.
+	// Note: this function will fail if the messenger has not been started.
+	DeregisterHandler(tlvType tlv.Type) error
 }

@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/testutils"
 	sphinx "github.com/lightningnetwork/lightning-onion"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,14 +81,70 @@ func TestBlindedToSphinx(t *testing.T) {
 	pubkeys := testutils.GetPubkeys(t, 4)
 
 	var (
-		payload0 = []byte{0, 0, 0}
-		payload1 = []byte{1, 1, 1}
-		payload2 = []byte{2, 2, 2}
+		// Create encrypted payloads for each hop.
+		encryptedData0 = []byte{0, 0, 0}
+		encryptedData1 = []byte{1, 1, 1}
+		encryptedData2 = []byte{2, 2, 2}
+
+		// Create onion payloads containing our encrypted data for each
+		// hop.
+		onionPayload0 = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData0,
+		}
+
+		onionPayload1 = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData1,
+		}
+
+		onionPayload2 = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData2,
+		}
+
+		// Add an arbitrary final payload intended for the last hop.
+		finalPayload = []*lnwire.FinalHopPayload{
+			{
+				TLVType: tlv.Type(101),
+				Value:   []byte{9, 9, 9},
+			},
+		}
+
+		// Create two payloads which utilize the final payload with
+		// different sets of encrypted data.
+		onion0WithFinal = &lnwire.OnionMessagePayload{
+			EncryptedData:    encryptedData0,
+			FinalHopPayloads: finalPayload,
+		}
+
+		onion1WithFinal = &lnwire.OnionMessagePayload{
+			EncryptedData:    encryptedData1,
+			FinalHopPayloads: finalPayload,
+		}
 	)
+
+	// Finally, encode all payloads for our test as tlv streams.
+	payload0, err := lnwire.EncodeOnionMessagePayload(onionPayload0)
+	require.NoError(t, err, "payload 0")
+
+	payload1, err := lnwire.EncodeOnionMessagePayload(onionPayload1)
+	require.NoError(t, err, "payload 1")
+
+	payload2, err := lnwire.EncodeOnionMessagePayload(onionPayload2)
+	require.NoError(t, err, "payload 2")
+
+	payload0WithFinal, err := lnwire.EncodeOnionMessagePayload(
+		onion0WithFinal,
+	)
+	require.NoError(t, err, "payload 0 with final payload")
+
+	payload1WithFinal, err := lnwire.EncodeOnionMessagePayload(
+		onion1WithFinal,
+	)
+	require.NoError(t, err, "payload 1 with final payload")
 
 	tests := []struct {
 		name         string
 		blindedPath  *sphinx.BlindedPath
+		finalPayload []*lnwire.FinalHopPayload
 		expectedPath *sphinx.PaymentPath
 	}{
 		{
@@ -96,7 +154,7 @@ func TestBlindedToSphinx(t *testing.T) {
 			blindedPath: &sphinx.BlindedPath{
 				IntroductionPoint: pubkeys[0],
 				EncryptedData: [][]byte{
-					payload0,
+					encryptedData0,
 				},
 				BlindedHops: []*btcec.PublicKey{
 					pubkeys[1],
@@ -113,11 +171,64 @@ func TestBlindedToSphinx(t *testing.T) {
 			},
 		},
 		{
+			name: "single hop with final payload",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+				},
+			},
+			finalPayload: finalPayload,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0WithFinal,
+					},
+				},
+			},
+		},
+		{
+			name: "two hops with final payload",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0, encryptedData1,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+					pubkeys[2],
+				},
+			},
+			finalPayload: finalPayload,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1WithFinal,
+					},
+				},
+			},
+		},
+		{
 			name: "three hops",
 			blindedPath: &sphinx.BlindedPath{
 				IntroductionPoint: pubkeys[0],
 				EncryptedData: [][]byte{
-					payload0, payload1, payload2,
+					encryptedData0, encryptedData1,
+					encryptedData2,
 				},
 				BlindedHops: []*btcec.PublicKey{
 					pubkeys[1],
@@ -153,7 +264,9 @@ func TestBlindedToSphinx(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			actualPath, err := blindedToSphinx(testCase.blindedPath)
+			actualPath, err := blindedToSphinx(
+				testCase.blindedPath, testCase.finalPayload,
+			)
 			require.NoError(t, err)
 
 			require.Equal(t, testCase.expectedPath, actualPath)

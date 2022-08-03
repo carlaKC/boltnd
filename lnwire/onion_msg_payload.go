@@ -57,9 +57,8 @@ func EncodeOnionMessagePayload(o *OnionMessagePayload) ([]byte, error) {
 	}
 
 	for _, finalHopPayload := range o.FinalHopPayloads {
-		if finalHopPayload.TLVType < finalHopPayloadStart {
-			return nil, fmt.Errorf("%w: %v out of range",
-				ErrNotFinalPayload, finalHopPayload.TLVType)
+		if err := finalHopPayload.Validate(); err != nil {
+			return nil, err
 		}
 
 		// Create a primitive record that just writes the final hop
@@ -167,6 +166,27 @@ type FinalHopPayload struct {
 	// expected to contain "sub-tlv" namespaces, and will require further
 	// decoding to be used.
 	Value []byte
+}
+
+// ValidateFinalPayload returns an error if a tlv is not within the range
+// reserved for final papyloads.
+func ValidateFinalPayload(tlvType tlv.Type) error {
+	if tlvType < finalHopPayloadStart {
+		return fmt.Errorf("%w: %v", ErrNotFinalPayload, tlvType)
+	}
+
+	return nil
+}
+
+// Validate performs validation of items added to the final hop's payload in an
+// onion. This function does not validate payload length to allow "marker-tlvs"
+// that have no body.
+func (f *FinalHopPayload) Validate() error {
+	if err := ValidateFinalPayload(f.TLVType); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ReplyPath is a blinded path used to respond to onion messages.
