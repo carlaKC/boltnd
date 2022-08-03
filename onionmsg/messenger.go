@@ -127,7 +127,7 @@ func (m *Messenger) Start() error {
 	go func() {
 		defer m.wg.Done()
 
-		err := m.receiveOnionMessages(context.Background())
+		err := m.manageOnionMessages(context.Background())
 		if err != nil && err != ErrShuttingDown {
 			m.requestShutdown(err)
 		}
@@ -293,9 +293,9 @@ func customOnionMessage(peer route.Vertex,
 	}, nil
 }
 
-// receiveOnionMessages consumes onion messages from lnd's custom message
+// manageOnionMessages consumes onion messages from lnd's custom message
 // stream and handles them.
-func (m *Messenger) receiveOnionMessages(ctx context.Context) error {
+func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
