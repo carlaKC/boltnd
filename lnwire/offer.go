@@ -122,20 +122,13 @@ func (o *Offer) records() ([]tlv.Record, error) {
 		records = append(records, descriptionRecord)
 	}
 
-	if o.Features != nil && !o.Features.IsEmpty() {
-		w := new(bytes.Buffer)
+	featuresRecord, err := encodeFetauresRecord(featuresType, o.Features)
+	if err != nil {
+		return nil, fmt.Errorf("encode features: %w", err)
+	}
 
-		if err := o.Features.Encode(w); err != nil {
-			return nil, fmt.Errorf("encode features: %w", err)
-		}
-
-		features := w.Bytes()
-
-		featuresRecord := tlv.MakePrimitiveRecord(
-			featuresType, &features,
-		)
-
-		records = append(records, featuresRecord)
+	if featuresRecord != nil {
+		records = append(records, *featuresRecord)
 	}
 
 	if !o.Expiry.IsZero() {
@@ -298,14 +291,11 @@ func DecodeOffer(offerBytes []byte) (*Offer, error) {
 	// We want to set a non-nil (empty) feature vector for our offer even
 	// if no TLV was set, so we optionally decode the feature vector if it
 	// was provided, setting an empty vector if it was not.
-	rawFeatures := lnwire.NewRawFeatureVector()
-	if _, ok := tlvMap[featuresType]; ok {
-		err := rawFeatures.Decode(bytes.NewReader(features))
-		if err != nil {
-			return nil, fmt.Errorf("raw features decode: %w", err)
-		}
+	_, found := tlvMap[featuresType]
+	offer.Features, err = decodeFeaturesRecord(features, found)
+	if err != nil {
+		return nil, fmt.Errorf("decode features: %w", err)
 	}
-	offer.Features = lnwire.NewFeatureVector(rawFeatures, lnwire.Features)
 
 	if _, ok := tlvMap[descriptionType]; ok {
 		offer.Description = string(description)
