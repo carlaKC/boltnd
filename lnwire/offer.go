@@ -8,7 +8,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -100,8 +100,11 @@ type Offer struct {
 	// MerkleRoot is the merkle root of all the non-signature tlvs included
 	// in the offer. This field isn't actually encoded in our tlv stream,
 	// but rather calculated from it.
-	MerkleRoot chainhash.Hash
+	MerkleRoot lntypes.Hash
 }
+
+// Compile time check that offer implements the tlvTree interface.
+var _ tlvTree = (*Offer)(nil)
 
 // records returns a set of tlv records for all of the offer's populated fields.
 func (o *Offer) records() ([]tlv.Record, error) {
@@ -319,22 +322,10 @@ func DecodeOffer(offerBytes []byte) (*Offer, error) {
 		offer.Signature = &signature
 	}
 
-	// We only want to calculate our merkle root from our populated tlv
-	// records and the unknown odd records that were parsed but not
-	// understood (by our code, since the sender would have included them
-	// in their root calculation).
-	populatedRecords, err := offer.records()
-	if err != nil {
-		return nil, fmt.Errorf("get records: %w", err)
-	}
-
-	root, err := MerkleRoot(
-		append(populatedRecords, unknownRecordsFromParsed(tlvMap)...),
-	)
+	offer.MerkleRoot, err = decodeMerkleRoot(offer, tlvMap)
 	if err != nil {
 		return nil, fmt.Errorf("merkle root: %w", err)
 	}
-	offer.MerkleRoot = *root
 
 	return offer, nil
 }

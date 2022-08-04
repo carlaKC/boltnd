@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 var (
@@ -25,7 +26,7 @@ var (
 // signatureDigest returns the tagged merkle root that is used for offer
 // signatures.
 func signatureDigest(messageTag, fieldTag []byte,
-	root chainhash.Hash) chainhash.Hash {
+	root lntypes.Hash) chainhash.Hash {
 
 	// The tag has the following format:
 	// lightning || message tag || field tag

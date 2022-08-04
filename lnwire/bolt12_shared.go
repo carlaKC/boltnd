@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -50,4 +51,39 @@ func decodeFeaturesRecord(decodedFeatures []byte,
 		}
 	}
 	return lnwire.NewFeatureVector(rawFeatures, lnwire.Features), nil
+}
+
+// tlvTree is an interface implemented by bolt 12 artifacts that can be
+// summarized in a tlv merkle tree.
+type tlvTree interface {
+	// records returns a set of tlv records for all populated tlv fields.
+	records() ([]tlv.Record, error)
+}
+
+// decodeMerkleRoot produces a tlv merkle tree root for a tlv stream that we
+// have decoded. Since the sender may have populated the tree with odd tlv
+// records that are unknown to us, we include odd unknown records that were
+// parsed but not understood (by our decoding, the sender would have known
+// them) in our tree.
+func decodeMerkleRoot(recordProducer tlvTree,
+	tlvMap map[tlv.Type][]byte) (lntypes.Hash, error) {
+
+	populatedRecords, err := recordProducer.records()
+	if err != nil {
+		return lntypes.Hash{}, fmt.Errorf("get records: %w", err)
+	}
+
+	root, err := MerkleRoot(
+		append(populatedRecords, unknownRecordsFromParsed(tlvMap)...),
+	)
+	if err != nil {
+		return lntypes.Hash{}, fmt.Errorf("merkle root: %w", err)
+	}
+
+	hash, err := lntypes.MakeHash(root[:])
+	if err != nil {
+		return lntypes.Hash{}, fmt.Errorf("make hash: %w", err)
+	}
+
+	return hash, nil
 }
