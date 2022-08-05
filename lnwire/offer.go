@@ -8,7 +8,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -58,10 +58,6 @@ var (
 	// ErrDescriptionRequried is returned when an offer is invalid because
 	//  does not contain a description.
 	ErrDescriptionRequried = errors.New("offer description required")
-
-	// ErrInvalidOfferSig is returned when the signature for an offer is
-	// invalid for the merkle root we have calculated.
-	ErrInvalidOfferSig = errors.New("invalid offer signature")
 )
 
 // Offer represents a bolt 12 offer.
@@ -100,8 +96,11 @@ type Offer struct {
 	// MerkleRoot is the merkle root of all the non-signature tlvs included
 	// in the offer. This field isn't actually encoded in our tlv stream,
 	// but rather calculated from it.
-	MerkleRoot chainhash.Hash
+	MerkleRoot lntypes.Hash
 }
+
+// Compile time check that offer implements the tlvTree interface.
+var _ tlvTree = (*Offer)(nil)
 
 // records returns a set of tlv records for all of the offer's populated fields.
 func (o *Offer) records() ([]tlv.Record, error) {
@@ -122,20 +121,13 @@ func (o *Offer) records() ([]tlv.Record, error) {
 		records = append(records, descriptionRecord)
 	}
 
-	if o.Features != nil && !o.Features.IsEmpty() {
-		w := new(bytes.Buffer)
+	featuresRecord, err := encodeFetauresRecord(featuresType, o.Features)
+	if err != nil {
+		return nil, fmt.Errorf("encode features: %w", err)
+	}
 
-		if err := o.Features.Encode(w); err != nil {
-			return nil, fmt.Errorf("encode features: %w", err)
-		}
-
-		features := w.Bytes()
-
-		featuresRecord := tlv.MakePrimitiveRecord(
-			featuresType, &features,
-		)
-
-		records = append(records, featuresRecord)
+	if featuresRecord != nil {
+		records = append(records, *featuresRecord)
 	}
 
 	if !o.Expiry.IsZero() {
@@ -298,14 +290,11 @@ func DecodeOffer(offerBytes []byte) (*Offer, error) {
 	// We want to set a non-nil (empty) feature vector for our offer even
 	// if no TLV was set, so we optionally decode the feature vector if it
 	// was provided, setting an empty vector if it was not.
-	rawFeatures := lnwire.NewRawFeatureVector()
-	if _, ok := tlvMap[featuresType]; ok {
-		err := rawFeatures.Decode(bytes.NewReader(features))
-		if err != nil {
-			return nil, fmt.Errorf("raw features decode: %w", err)
-		}
+	_, found := tlvMap[featuresType]
+	offer.Features, err = decodeFeaturesRecord(features, found)
+	if err != nil {
+		return nil, fmt.Errorf("decode features: %w", err)
 	}
-	offer.Features = lnwire.NewFeatureVector(rawFeatures, lnwire.Features)
 
 	if _, ok := tlvMap[descriptionType]; ok {
 		offer.Description = string(description)
@@ -329,22 +318,10 @@ func DecodeOffer(offerBytes []byte) (*Offer, error) {
 		offer.Signature = &signature
 	}
 
-	// We only want to calculate our merkle root from our populated tlv
-	// records and the unknown odd records that were parsed but not
-	// understood (by our code, since the sender would have included them
-	// in their root calculation).
-	populatedRecords, err := offer.records()
-	if err != nil {
-		return nil, fmt.Errorf("get records: %w", err)
-	}
-
-	root, err := MerkleRoot(
-		append(populatedRecords, unknownRecordsFromParsed(tlvMap)...),
-	)
+	offer.MerkleRoot, err = decodeMerkleRoot(offer, tlvMap)
 	if err != nil {
 		return nil, fmt.Errorf("merkle root: %w", err)
 	}
-	offer.MerkleRoot = *root
 
 	return offer, nil
 }

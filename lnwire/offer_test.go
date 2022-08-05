@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/carlakc/boltnd/testutils"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
 )
@@ -123,7 +123,7 @@ func TestOfferEncoding(t *testing.T) {
 			// We also clear our merkle root value which is
 			// calculated when we decode the offer tlv stream, we're
 			// not testing this calculation here.
-			decoded.MerkleRoot = chainhash.Hash{}
+			decoded.MerkleRoot = lntypes.ZeroHash
 
 			require.Equal(t, testCase.offer, decoded)
 		})
@@ -153,7 +153,7 @@ func TestDecodedMerkleRoot(t *testing.T) {
 	decodedOffer, err := DecodeOffer(offerBytes)
 	require.NoError(t, err, "decode")
 
-	require.Equal(t, *merkleRoot, decodedOffer.MerkleRoot)
+	require.Equal(t, merkleRoot, decodedOffer.MerkleRoot)
 }
 
 // TestOfferValidation tests validation of offers.
@@ -164,11 +164,11 @@ func TestOfferValidation(t *testing.T) {
 
 	// Create a mock merkle root and sign it.
 	rootBytes := [32]byte{1, 2, 3}
-	root, err := chainhash.NewHash(rootBytes[:])
+	root, err := lntypes.MakeHash(rootBytes[:])
 	require.NoError(t, err, "merkle root")
 
 	digest := signatureDigest(
-		offerTag, signatureTag, *root,
+		offerTag, signatureTag, root,
 	)
 
 	sig, err := schnorr.Sign(nodePrivKey, digest[:])
@@ -182,7 +182,7 @@ func TestOfferValidation(t *testing.T) {
 	// Create another merkle root that won't match our signature to test
 	// bad sigs.
 	badRootBytes := [32]byte{1, 2, 3, 4}
-	badRoot, err := chainhash.NewHash(badRootBytes[:])
+	badRoot, err := lntypes.MakeHash(badRootBytes[:])
 	require.NoError(t, err, "bad merkle root")
 
 	tests := []struct {
@@ -236,7 +236,7 @@ func TestOfferValidation(t *testing.T) {
 				NodeID:      nodePubkey,
 				Description: " ",
 				Signature:   &schnorrSig,
-				MerkleRoot:  *root,
+				MerkleRoot:  root,
 			},
 		},
 		{
@@ -245,9 +245,9 @@ func TestOfferValidation(t *testing.T) {
 				NodeID:      nodePubkey,
 				Description: " ",
 				Signature:   &schnorrSig,
-				MerkleRoot:  *badRoot,
+				MerkleRoot:  badRoot,
 			},
-			err: ErrInvalidOfferSig,
+			err: ErrInvalidSig,
 		},
 	}
 

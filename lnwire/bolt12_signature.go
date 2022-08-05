@@ -3,11 +3,13 @@ package lnwire
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 var (
@@ -17,15 +19,26 @@ var (
 	// offerTag is the message tag used to tag signatures on offers.
 	offerTag = []byte("offer")
 
+	// invoiceTag is the message tag used to tag signatures on invoices.
+	invoiceTag = []byte("invoice")
+
+	// invoiceRequestTag is the message tag used to tag signatures on
+	// invoice requests.
+	invoiceRequestTag = []byte("invoicerequest")
+
 	// signatureTag is the field tag used to tag signatures (TLV type= 240)
 	// for offers.
 	signatureTag = []byte("signature")
+
+	// ErrInvalidSig is returned when the signature tlv value is
+	// invalid.
+	ErrInvalidSig = errors.New("invalid signature")
 )
 
 // signatureDigest returns the tagged merkle root that is used for offer
 // signatures.
 func signatureDigest(messageTag, fieldTag []byte,
-	root chainhash.Hash) chainhash.Hash {
+	root lntypes.Hash) chainhash.Hash {
 
 	// The tag has the following format:
 	// lightning || message tag || field tag
@@ -51,7 +64,7 @@ func validateSignature(signature [64]byte, nodeID *btcec.PublicKey,
 	}
 
 	if !sig.Verify(digest, nodeID) {
-		return fmt.Errorf("%w: %v for: %v from: %v", ErrInvalidOfferSig,
+		return fmt.Errorf("%w: %v for: %v from: %v", ErrInvalidSig,
 			hex.EncodeToString(signature[:]),
 			hex.EncodeToString(digest),
 			hex.EncodeToString(schnorr.SerializePubKey(nodeID)),

@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
@@ -103,23 +104,25 @@ func (t *TLVLeaf) TaggedHash() chainhash.Hash {
 }
 
 // MerkleRoot computes a merkle tree for the set of offer tlv records provided.
-func MerkleRoot(records []tlv.Record) (*chainhash.Hash, error) {
+func MerkleRoot(records []tlv.Record) (lntypes.Hash, error) {
 	leaves, err := CreateTLVLeaves(records, encodeTLV)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v records", err, len(records))
+		return lntypes.ZeroHash, fmt.Errorf("%w: %v records", err,
+			len(records))
 	}
 
 	if len(leaves) == 0 {
-		return nil, ErrNoTLVs
+		return lntypes.ZeroHash, ErrNoTLVs
 	}
 
 	branches, err := CreateTLVBranches(leaves)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v leaves", err, len(leaves))
+		return lntypes.ZeroHash, fmt.Errorf("%w: %v leaves", err,
+			len(leaves))
 	}
 
 	hash := CalculateRoot(branches)
-	return &hash, nil
+	return lntypes.MakeHash(hash[:])
 }
 
 // CalculateRoot combines a set of branches into a merkle root.
