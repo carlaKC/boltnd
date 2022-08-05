@@ -2,6 +2,7 @@ package lnwire
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"time"
 
@@ -62,6 +63,19 @@ const (
 	invSigType tlv.Type = 240
 )
 
+var (
+	// ErrNoCreationTime is returned when an invoice does not have a
+	// created at tlv.
+	ErrNoCreationTime = errors.New("invoice requires creation time")
+
+	// ErrNoPaymentHash is returned when an invoice does not have a
+	// payment hash tlv.
+	ErrNoPaymentHash = errors.New("invoice requires payment hash")
+
+	// ErrNoAmount is returned when an invoice doesn't have an amount tlv.
+	ErrNoAmount = errors.New("invoice requires amount")
+)
+
 // Invoice represents a bolt 12 invoice.
 type Invoice struct {
 	// OfferID is the merkle root of the offer this invoice is associated
@@ -117,6 +131,45 @@ type Invoice struct {
 
 // Compile time check that invoice implements the tlvTree interface.
 var _ tlvTree = (*Invoice)(nil)
+
+// Validate performs the validation outlined in the specification for invoices.
+func (i *Invoice) Validate() error {
+	if i.Amount == 0 {
+		return ErrNoAmount
+	}
+
+	if i.PaymentHash == lntypes.ZeroHash {
+		return ErrNoPaymentHash
+	}
+
+	if i.CreatedAt.IsZero() {
+		return ErrNoCreationTime
+	}
+
+	if i.NodeID == nil {
+		return ErrNodeIDRequired
+	}
+
+	if i.Description == "" {
+		return ErrDescriptionRequried
+	}
+
+	// Check that our signature is a valid signature of the merkle root for
+	// the offer.
+	if i.Signature != nil {
+		sigDigest := signatureDigest(
+			invoiceTag, signatureTag, i.MerkleRoot,
+		)
+
+		if err := validateSignature(
+			*i.Signature, i.NodeID, sigDigest[:],
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
 
 // records returns a set of tlv records for all the non-nil invoice fields.
 func (i *Invoice) records() ([]tlv.Record, error) {

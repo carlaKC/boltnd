@@ -1,9 +1,11 @@
 package lnwire
 
 import (
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -172,6 +174,122 @@ func TestInvoiceEncoding(t *testing.T) {
 			}
 
 			require.Equal(t, testCase.encoded, decoded)
+		})
+	}
+}
+
+// TestInvoiceValidation tests validation of bolt 12 invoices.
+func TestInvoiceValidation(t *testing.T) {
+	var (
+		created = time.Date(
+			2022, 01, 01, 0, 0, 0, 0, time.Local,
+		)
+
+		hash, merkleRoot lntypes.Hash
+
+		privkey = testutils.GetPrivkeys(t, 1)[0]
+		pubkey  = privkey.PubKey()
+	)
+
+	copy(hash[:], []byte{1, 2, 3})
+
+	// Populate a random merkle root value to test signature validation.
+	copy(merkleRoot[:], []byte{3, 2, 1})
+	digest := signatureDigest(invoiceTag, signatureTag, merkleRoot)
+
+	sig, err := schnorr.Sign(privkey, digest[:])
+	require.NoError(t, err, "sign root")
+
+	// Serialized our signature and copy into [64]byte.
+	sigBytes := sig.Serialize()
+	var schnorrSig [64]byte
+	copy(schnorrSig[:], sigBytes)
+
+	tests := []struct {
+		name    string
+		invoice *Invoice
+		err     error
+	}{
+		{
+			name:    "no amount",
+			invoice: &Invoice{},
+			err:     ErrNoAmount,
+		},
+		{
+			name: "no payment hash",
+			invoice: &Invoice{
+				Amount: lnwire.MilliSatoshi(1),
+			},
+			err: ErrNoPaymentHash,
+		},
+		{
+			name: "no creation time",
+			invoice: &Invoice{
+				Amount:      lnwire.MilliSatoshi(1),
+				PaymentHash: hash,
+			},
+			err: ErrNoCreationTime,
+		},
+		{
+			name: "no node id",
+			invoice: &Invoice{
+				Amount:      lnwire.MilliSatoshi(1),
+				PaymentHash: hash,
+				CreatedAt:   created,
+			},
+			err: ErrNodeIDRequired,
+		},
+		{
+			name: "no description",
+			invoice: &Invoice{
+				Amount:      lnwire.MilliSatoshi(1),
+				PaymentHash: hash,
+				CreatedAt:   created,
+				NodeID:      pubkey,
+			},
+			err: ErrDescriptionRequried,
+		},
+		{
+			name: "invalid signature",
+			invoice: &Invoice{
+				Amount:      lnwire.MilliSatoshi(1),
+				PaymentHash: hash,
+				CreatedAt:   created,
+				NodeID:      pubkey,
+				Description: "invoice",
+				// Use a signature that has signed the digest
+				// of our merkleRoot var.
+				Signature: &schnorrSig,
+				// Set our merkle root to a different value to
+				// merkleRoot (above) to test for invalid
+				// signatures.
+				MerkleRoot: hash,
+			},
+			err: ErrInvalidSig,
+		},
+		{
+			name: "signature valid",
+			invoice: &Invoice{
+				Amount:      lnwire.MilliSatoshi(1),
+				PaymentHash: hash,
+				CreatedAt:   created,
+				NodeID:      pubkey,
+				Description: "invoice",
+				// Use a signature that has signed the digest
+				// of our merkleRoot var, and set the correct
+				// merkle root to produce a valid signature.
+				Signature:  &schnorrSig,
+				MerkleRoot: merkleRoot,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.invoice.Validate()
+			require.True(t, errors.Is(err, testCase.err))
 		})
 	}
 }
