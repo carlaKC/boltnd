@@ -158,7 +158,7 @@ func (i *Invoice) Validate() error {
 	// the offer.
 	if i.Signature != nil {
 		sigDigest := signatureDigest(
-			invoiceTag, invoiceRequestTag, i.MerkleRoot,
+			invoiceTag, signatureTag, i.MerkleRoot,
 		)
 
 		if err := validateSignature(
