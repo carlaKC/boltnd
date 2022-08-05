@@ -58,10 +58,6 @@ var (
 	// ErrDescriptionRequried is returned when an offer is invalid because
 	//  does not contain a description.
 	ErrDescriptionRequried = errors.New("offer description required")
-
-	// ErrInvalidOfferSig is returned when the signature for an offer is
-	// invalid for the merkle root we have calculated.
-	ErrInvalidOfferSig = errors.New("invalid offer signature")
 )
 
 // Offer represents a bolt 12 offer.

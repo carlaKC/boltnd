@@ -247,7 +247,7 @@ func TestOfferValidation(t *testing.T) {
 				Signature:   &schnorrSig,
 				MerkleRoot:  badRoot,
 			},
-			err: ErrInvalidOfferSig,
+			err: ErrInvalidSig,
 		},
 	}
 

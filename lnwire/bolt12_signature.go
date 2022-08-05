@@ -3,6 +3,7 @@ package lnwire
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -21,6 +22,10 @@ var (
 	// signatureTag is the field tag used to tag signatures (TLV type= 240)
 	// for offers.
 	signatureTag = []byte("signature")
+
+	// ErrInvalidSig is returned when the signature tlv value is
+	// invalid.
+	ErrInvalidSig = errors.New("invalid signature")
 )
 
 // signatureDigest returns the tagged merkle root that is used for offer
@@ -52,7 +57,7 @@ func validateSignature(signature [64]byte, nodeID *btcec.PublicKey,
 	}
 
 	if !sig.Verify(digest, nodeID) {
-		return fmt.Errorf("%w: %v for: %v from: %v", ErrInvalidOfferSig,
+		return fmt.Errorf("%w: %v for: %v from: %v", ErrInvalidSig,
 			hex.EncodeToString(signature[:]),
 			hex.EncodeToString(digest),
 			hex.EncodeToString(schnorr.SerializePubKey(nodeID)),
