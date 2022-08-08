@@ -3,10 +3,14 @@ package offers
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/testutils"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -238,5 +242,148 @@ func TestValidateExchange(t *testing.T) {
 
 			require.True(t, errors.Is(err, testCase.err))
 		})
+	}
+}
+
+type monitorPaymentTestCase struct {
+	name      string
+	setupMock func(m *mock.Mock)
+	runTest   func(chan lndclient.PaymentStatus, chan error,
+		chan struct{})
+	err error
+}
+
+// TestMonitorPayment tests monitoring payments made via lnd.
+func TestMonitorPayment(t *testing.T) {
+	var (
+		updateInFlight = lndclient.PaymentStatus{
+			State: lnrpc.Payment_IN_FLIGHT,
+		}
+
+		updateSuccess = lndclient.PaymentStatus{
+			State: lnrpc.Payment_SUCCEEDED,
+		}
+
+		updateFailed = lndclient.PaymentStatus{
+			State: lnrpc.Payment_FAILED,
+		}
+
+		failResult = &paymentResult{
+			success: false,
+		}
+
+		successResult = &paymentResult{
+			success: true,
+		}
+
+		paymentErr = errors.New("payment error")
+	)
+
+	tests := []monitorPaymentTestCase{
+		{
+			name: "payment fails",
+			setupMock: func(m *mock.Mock) {
+				m.On(
+					"deliverResult", failResult,
+				).Once().Return()
+			},
+			runTest: func(p chan lndclient.PaymentStatus,
+				_ chan error, _ chan struct{}) {
+
+				// Send an arbitrary number of in flight
+				// updates before a failure.
+				p <- updateInFlight
+				p <- updateInFlight
+				p <- updateInFlight
+				p <- updateFailed
+			},
+			err: nil,
+		},
+		{
+			name: "payment succeeds",
+			setupMock: func(m *mock.Mock) {
+				m.On(
+					"deliverResult", successResult,
+				).Once().Return()
+			},
+			runTest: func(p chan lndclient.PaymentStatus,
+				_ chan error, _ chan struct{}) {
+
+				p <- updateInFlight
+				p <- updateSuccess
+			},
+			err: nil,
+		},
+		{
+			name: "payment errors out",
+			runTest: func(p chan lndclient.PaymentStatus,
+				err chan error, _ chan struct{}) {
+
+				p <- updateInFlight
+				err <- paymentErr
+			},
+			err: paymentErr,
+		},
+		{
+			name:      "coordinator shutdown",
+			setupMock: nil,
+			runTest: func(_ chan lndclient.PaymentStatus,
+				_ chan error, quit chan struct{}) {
+
+				// Close the quit channel to indicate shutdown.
+				close(quit)
+			},
+			err: ErrShuttingDown,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			testMonitorPayment(t, testCase)
+		})
+	}
+}
+
+func testMonitorPayment(t *testing.T, testCase monitorPaymentTestCase) {
+	var (
+		// Setup a mock for our test and use it to mock delivering
+		// results from the monitor payment loop.
+		mock = &mock.Mock{}
+
+		deliverResult = func(p *paymentResult) {
+			mock.MethodCalled("deliverResult", p)
+		}
+
+		// Create channels used to deliver input to monitor loop.
+		payChan    = make(chan lndclient.PaymentStatus)
+		payErrChan = make(chan error)
+		quit       = make(chan struct{})
+
+		// Create an error channel to monitor errors.
+		errChan = make(chan error)
+	)
+
+	if testCase.setupMock != nil {
+		testCase.setupMock(mock)
+	}
+
+	// monitorPayment blocks, so we spin up a goroutine to run it in.
+	go func() {
+		errChan <- monitorPayment(
+			lntypes.ZeroHash, lntypes.ZeroHash,
+			payChan, payErrChan, deliverResult, quit,
+		)
+	}()
+
+	testCase.runTest(payChan, payErrChan, quit)
+
+	select {
+	case err := <-errChan:
+		require.True(t, errors.Is(err, testCase.err))
+
+	case <-time.After(defaultTimeout):
+		t.Fatal("timeout before monitor exited")
 	}
 }
