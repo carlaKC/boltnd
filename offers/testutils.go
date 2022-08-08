@@ -2,11 +2,14 @@ package offers
 
 import (
 	"testing"
+	"time"
 
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+var defaultTimeout = time.Second * 5
 
 // offerCoordinatorTest contains the components required to run various tests
 // concerning the offer coordinator.

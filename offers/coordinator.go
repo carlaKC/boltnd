@@ -8,6 +8,9 @@ import (
 	"sync/atomic"
 
 	"github.com/carlakc/boltnd/lnwire"
+	"github.com/lightninglabs/lndclient"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 )
 
 var (
@@ -86,6 +89,20 @@ func NewCoordinator(lnd LNDOffers,
 	}
 }
 
+// paymentResult summarizes the result of an offer payment.
+type paymentResult struct {
+	offerID lntypes.Hash
+	success bool
+}
+
+// newPaymentResult produces a payment result for the offer.
+func newPaymentResult(offerID lntypes.Hash, success bool) *paymentResult {
+	return &paymentResult{
+		offerID: offerID,
+		success: success,
+	}
+}
+
 // Start runs the coordinator.
 func (c *Coordinator) Start() error {
 	if !atomic.CompareAndSwapInt32(&c.started, 0, 1) {
@@ -125,6 +142,54 @@ func (c *Coordinator) handleOffers() error {
 	for {
 		select {
 		case <-c.quit:
+			return ErrShuttingDown
+		}
+	}
+}
+
+// monitorPayment tracks the progress of an in-flight payment, using the
+// deliverResult closure provided to report the final result. The quit channel
+// is provided to signal shutdown.
+func monitorPayment(offerID, hash lntypes.Hash,
+	payChan chan lndclient.PaymentStatus, errChan chan error,
+	deliverResult func(*paymentResult), quit chan struct{}) error {
+
+	for {
+		select {
+		case status := <-payChan:
+			switch status.State {
+			case lnrpc.Payment_FAILED:
+				log.Infof("Offer: %v, payment: %v failed: %v",
+					offerID, hash, status.FailureReason)
+
+				result := newPaymentResult(offerID, false)
+				deliverResult(result)
+
+				return nil
+
+			case lnrpc.Payment_SUCCEEDED:
+				log.Infof("Offer: %v, payment: %v succeeded",
+					offerID, hash)
+
+				result := newPaymentResult(offerID, true)
+				deliverResult(result)
+
+				return nil
+
+			case lnrpc.Payment_IN_FLIGHT:
+				log.Infof("Offer: %v, payment: %v in flight"+
+					"%v htlcs", len(status.Htlcs), offerID,
+					hash)
+			}
+
+		case err := <-errChan:
+			log.Errorf("offer: %v,payment: %v failed: %v", offerID,
+				hash, err)
+
+			return err
+
+		// Exit if instructed to.
+		case <-quit:
 			return ErrShuttingDown
 		}
 	}
