@@ -10,6 +10,8 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	lndwire "github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -430,4 +432,48 @@ func TestHandlePaymentResult(t *testing.T) {
 
 	// Assert that state is updated to failed payment.
 	assert.Equal(t, OfferStateFailed, coordinator.outboundOffers[id1].state)
+}
+
+// TestCreatePaymentRequest tests creation of a lnd payment request from a
+// bolt 12 invoice.
+func TestCreatePaymentRequest(t *testing.T) {
+	hash := [32]byte{1, 2, 3}
+	paymentHash, err := lntypes.MakeHash(hash[:])
+	require.NoError(t, err)
+
+	pubkey := testutils.GetPubkeys(t, 1)[0]
+
+	dest, err := route.NewVertexFromBytes(
+		pubkey.SerializeCompressed(),
+	)
+	require.NoError(t, err)
+
+	// Create an invoice without a cltv.
+	invoice := &lnwire.Invoice{
+		NodeID:      pubkey,
+		Amount:      lndwire.MilliSatoshi(1000),
+		PaymentHash: paymentHash,
+	}
+
+	// Assert that we fill in our default cltv.
+	expected := lndclient.SendPaymentRequest{
+		Target:         dest,
+		Amount:         invoice.Amount.ToSatoshis(),
+		PaymentHash:    &invoice.PaymentHash,
+		Timeout:        defaultPaymentTimeout,
+		FinalCLTVDelta: defaultCLTVDelta,
+	}
+
+	actual, err := createSendPaymentRequest(invoice)
+	require.NoError(t, err)
+	require.Equal(t, expected, *actual)
+
+	// Update to have a non-zero cltv and assert that we fill in
+	// accordingly.
+	invoice.CLTVExpiry = 10
+	expected.FinalCLTVDelta = 10
+
+	actual, err = createSendPaymentRequest(invoice)
+	require.NoError(t, err)
+	require.Equal(t, expected, *actual)
 }

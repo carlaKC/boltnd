@@ -7,12 +7,20 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
+
+// defaultCLTVDelta is the default cltv provided by the offers spec.
+const defaultCLTVDelta = 18
+
+// defaultPaymentTimeout is the default timeout for lnd payments.
+var defaultPaymentTimeout = time.Minute * 5
 
 var (
 	// ErrShuttingDown is returned when the coordinator exits.
@@ -294,6 +302,38 @@ func (c *Coordinator) sendOfferPayment(offerID lntypes.Hash,
 	}()
 
 	return nil
+}
+
+// createSendPaymentRequest creates a request for lnd to pay a bolt 12 invoice.
+//
+// NB: this function rounds down to satoshis because lnd client's
+// SendPaymentRequest currently only includes a satoshi amount field.
+func createSendPaymentRequest(invoice *lnwire.Invoice) (
+	*lndclient.SendPaymentRequest, error) {
+
+	// Create a payment request from the invoice we've received.
+	dest, err := route.NewVertexFromBytes(
+		invoice.NodeID.SerializeCompressed(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("invalid node id: %w", err)
+	}
+
+	req := lndclient.SendPaymentRequest{
+		Target: dest,
+		// TODO - update lndclient to have msat amount!
+		Amount:         invoice.Amount.ToSatoshis(),
+		PaymentHash:    &invoice.PaymentHash,
+		Timeout:        defaultPaymentTimeout,
+		FinalCLTVDelta: uint16(invoice.CLTVExpiry),
+	}
+
+	// Update to defaults if not specified.
+	if req.FinalCLTVDelta == 0 {
+		req.FinalCLTVDelta = defaultCLTVDelta
+	}
+
+	return &req, nil
 }
 
 // monitorPayment tracks the progress of an in-flight payment, using the
