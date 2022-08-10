@@ -161,6 +161,13 @@ const (
 
 // activeOfferState represents an offer that is currently active.
 type activeOfferState struct {
+	// offer is the original offer being paid.
+	offer *lnwire.Offer
+
+	// invoiceRequest is the request for an invoice that was sent for an
+	// active offer.
+	invoiceRequest *lnwire.InvoiceRequest
+
 	// state reflects the current state of the offer.
 	state OfferPayState
 }
@@ -258,6 +265,49 @@ func (c *Coordinator) handlePaymentResult(offerID lntypes.Hash,
 
 	offer.state = newState
 	log.Infof("Offer: %v updated to: %v", offerID, newState)
+
+	return nil
+}
+
+// validateReceivedInvoice performs the various validation checks required
+// when we receive an invoice:
+// 1. That the invoice itself is valid
+// 2. That is is for an offer we want to pay, and we're expecting an incoming
+//    invoice for the offer
+// 3. That the invoice is valid for the offer / invoice request it is
+//    associated with
+func (c *Coordinator) validateReceivedInvoice(invoice *lnwire.Invoice) error {
+	if err := invoice.Validate(); err != nil {
+		return fmt.Errorf("invalid invoice: %w", err)
+	}
+
+	activeOffer, ok := c.outboundOffers[invoice.OfferID]
+	if !ok {
+		return fmt.Errorf("%w: offer id: %v received invoice",
+			ErrUnknownOffer, invoice.OfferID)
+	}
+
+	// Check that we're in the correct state to make a payment.
+	if activeOffer.state != OfferStateRequestSent {
+		return fmt.Errorf("Offer: %v: %w, expected: %v got: %v",
+			activeOffer.offer.MerkleRoot, ErrUnexpectedState,
+			OfferStateRequestSent, activeOffer.state)
+	}
+
+	// Check that the invoice is appropriate for the offer we have on
+	// record.
+	err := validateExchange(
+		activeOffer.offer, activeOffer.invoiceRequest, invoice,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: invoice: %v invalid for offer: %v",
+			err, invoice.PaymentHash, invoice.OfferID)
+	}
+
+	// Once we've validated that this is an invoice that we're expecting
+	// and want to pay, we can update our state to reflect that the offer
+	// has received an invoice.
+	c.outboundOffers[invoice.OfferID].state = OfferStateInvoiceRecieved
 
 	return nil
 }
