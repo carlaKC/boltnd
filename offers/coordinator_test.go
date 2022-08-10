@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -386,4 +387,47 @@ func testMonitorPayment(t *testing.T, testCase monitorPaymentTestCase) {
 	case <-time.After(defaultTimeout):
 		t.Fatal("timeout before monitor exited")
 	}
+}
+
+// TestHandlePaymentResult tests handling of payment results for offers.
+func TestHandlePaymentResult(t *testing.T) {
+	id1Bytes := [32]byte{1}
+	id1, err := lntypes.MakeHash(id1Bytes[:])
+	require.NoError(t, err)
+
+	// Create a coordinator, we don't need any deps because we're just
+	// testing one internal function.
+	coordinator := NewCoordinator(nil, nil)
+
+	// First, test payment results for an unknown offer.
+	err = coordinator.handlePaymentResult(id1, true)
+	require.True(t, errors.Is(err, ErrUnknownOffer))
+
+	// Next, setup an active offer that hasn't dispatched a payment yet.
+	coordinator.outboundOffers[id1] = &activeOfferState{
+		state: OfferStateInitiated,
+	}
+
+	err = coordinator.handlePaymentResult(id1, true)
+	require.True(t, errors.Is(err, ErrUnexpectedState))
+
+	// Update our state entry to have the correct state and test that we
+	// handle the result correctly.
+	coordinator.outboundOffers[id1].state = OfferStatePaymentDispatched
+
+	err = coordinator.handlePaymentResult(id1, true)
+	require.Nil(t, err)
+
+	// Assert that state is updated to successful payment.
+	assert.Equal(t, OfferStatePaid, coordinator.outboundOffers[id1].state)
+
+	// Reset our state and test that failed payments are also updated
+	// correctly.
+	coordinator.outboundOffers[id1].state = OfferStatePaymentDispatched
+
+	err = coordinator.handlePaymentResult(id1, false)
+	require.Nil(t, err)
+
+	// Assert that state is updated to failed payment.
+	assert.Equal(t, OfferStateFailed, coordinator.outboundOffers[id1].state)
 }

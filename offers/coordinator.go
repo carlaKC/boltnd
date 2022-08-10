@@ -59,6 +59,13 @@ var (
 	// ErrChainhashMismatch is returned when an offer, invoice request or
 	// invoice don't have matching chain hashes.
 	ErrChainhashMismatch = errors.New("chainhash does not match")
+
+	// ErrUnknownOffer is returned when an offer is unknown to us.
+	ErrUnknownOffer = errors.New("unknown offer")
+
+	// ErrUnexpectedState is returned when an offer does not have the
+	// state we expect.
+	ErrUnexpectedState = errors.New("unexpected state")
 )
 
 // Coordinator manages the exchange of offer-related messages and payment of
@@ -69,6 +76,16 @@ type Coordinator struct {
 
 	// lnd provides the lnd apis required for offers.
 	lnd LNDOffers
+
+	// outboundOffers maps an offer ID to the current state of the offer
+	// exchange. This map should *only* be accessed by the handleOffers
+	// control loop to ensure consistency.
+	outboundOffers map[lntypes.Hash]*activeOfferState
+
+	// paymentResults is a channel used to deliver the results of
+	// asynchronous payments made to offer invoices to the coordinator's
+	// main loop.
+	paymentResults chan *paymentResult
 
 	// requestShutdown is called when the messenger experiences an error to
 	// signal to calling code that it should gracefully exit.
@@ -84,6 +101,8 @@ func NewCoordinator(lnd LNDOffers,
 
 	return &Coordinator{
 		lnd:             lnd,
+		outboundOffers:  make(map[lntypes.Hash]*activeOfferState),
+		paymentResults:  make(chan *paymentResult),
 		requestShutdown: requestShutdown,
 		quit:            make(chan struct{}),
 	}
@@ -101,6 +120,40 @@ func newPaymentResult(offerID lntypes.Hash, success bool) *paymentResult {
 		offerID: offerID,
 		success: success,
 	}
+}
+
+// OfferPayState represents the various states of an offer exchange when we
+// are the paying party.
+type OfferPayState int
+
+const (
+	// OfferStateInitiated indicates that we have initiated the process of
+	// paying an offer.
+	OfferStateInitiated OfferPayState = iota
+
+	// OfferStateRequestSent indicates that we have sent an invoice request
+	// for the offer.
+	OfferStateRequestSent
+
+	// OfferStateInvoiceRecieved indicates that we have received an invoice
+	// in response to our request.
+	OfferStateInvoiceRecieved
+
+	// OfferStatePaymentDispatched indicates that we have dispatched a
+	// payment for the offer.
+	OfferStatePaymentDispatched
+
+	// OfferStatePaid indicates that we have paid an offer's invoice.
+	OfferStatePaid
+
+	// OfferStateFailed indicates that we failed to pay an offer's invoice.
+	OfferStateFailed
+)
+
+// activeOfferState represents an offer that is currently active.
+type activeOfferState struct {
+	// state reflects the current state of the offer.
+	state OfferPayState
 }
 
 // Start runs the coordinator.
@@ -141,10 +194,63 @@ func (c *Coordinator) Stop() error {
 func (c *Coordinator) handleOffers() error {
 	for {
 		select {
+		// Consume the outcomes of payments to offer invoices.
+		case result := <-c.paymentResults:
+			// Handle payment of individual offers. We don't error
+			// out here because offer-level failures shouldn't shut
+			// us down.
+			err := c.handlePaymentResult(
+				result.offerID, result.success,
+			)
+			if err != nil {
+				log.Errorf("Handle result for offer: %v "+
+					"failed: %v", result.offerID, err)
+			}
+
 		case <-c.quit:
 			return ErrShuttingDown
 		}
 	}
+}
+
+// deliverPaymentResult delivers the outcome of a payment to our main control
+// loop. Delivery is not guaranteed, the result will be dropped is the
+// coordinator is shutting down.
+func (c *Coordinator) deliverPaymentResult(result *paymentResult) {
+	select {
+	case c.paymentResults <- result:
+	case <-c.quit:
+		log.Infof("Offer: %v result not delivered", result.offerID)
+	}
+}
+
+// handlePaymentResult updates the coordinator's internal state when we get
+// a payment result for an offer.
+func (c *Coordinator) handlePaymentResult(offerID lntypes.Hash,
+	success bool) error {
+
+	// It's pretty serious if we're paying offers that we don't know, so
+	// we'll exit on an unknown offer.
+	offer, ok := c.outboundOffers[offerID]
+	if !ok {
+		return fmt.Errorf("Offer: %v: %w", offerID, ErrUnknownOffer)
+	}
+
+	if offer.state != OfferStatePaymentDispatched {
+		return fmt.Errorf("Offer: %v: %w, expected: %v got: %v",
+			offerID, ErrUnexpectedState,
+			OfferStatePaymentDispatched, offer.state)
+	}
+
+	newState := OfferStatePaid
+	if !success {
+		newState = OfferStateFailed
+	}
+
+	offer.state = newState
+	log.Infof("Offer: %v updated to: %v", offerID, newState)
+
+	return nil
 }
 
 // monitorPayment tracks the progress of an in-flight payment, using the
