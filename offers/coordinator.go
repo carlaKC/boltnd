@@ -2,6 +2,7 @@ package offers
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -249,6 +250,48 @@ func (c *Coordinator) handlePaymentResult(offerID lntypes.Hash,
 
 	offer.state = newState
 	log.Infof("Offer: %v updated to: %v", offerID, newState)
+
+	return nil
+}
+
+// sendOfferPayment dispatches a payment for an offer via lnd, kicking off a
+// goroutine which will monitor and report the outcome of the payment back to
+// our main loop. This function assumes that the offer being paid is known to
+// the coordinator.
+func (c *Coordinator) sendOfferPayment(offerID lntypes.Hash,
+	req lndclient.SendPaymentRequest) error {
+
+	// We assume that our offer is known, so we can directly lookup and
+	// update our state.
+	c.outboundOffers[offerID].state = OfferStatePaymentDispatched
+
+	ctx, cancel := context.WithCancel(context.Background())
+	payChan, errChan, err := c.lnd.SendPayment(ctx, req)
+	if err != nil {
+		// cancel our context to prevent a lost cancel linter error (lnd
+		// will cancel the payment if it fails, so not strictly
+		// required).
+		cancel()
+		return fmt.Errorf("send payment failed: %w", err)
+	}
+
+	c.wg.Add(1)
+	go func() {
+		// Cancel our lnd context when this loop exits so that the
+		// steam with lnd will be canceled if we're shutting down.
+		defer func() {
+			cancel()
+			c.wg.Done()
+		}()
+
+		err := monitorPayment(
+			offerID, *req.PaymentHash, payChan, errChan,
+			c.deliverPaymentResult, c.quit,
+		)
+		if err != nil && err != ErrShuttingDown {
+			log.Errorf("Monitoring payment failed: %v", err)
+		}
+	}()
 
 	return nil
 }
