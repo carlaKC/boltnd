@@ -14,6 +14,10 @@ import (
 )
 
 const (
+	// chainType is a record type setting the genesis hash of the chain
+	// an offer is for.
+	chainType tlv.Type = 2
+
 	// amountType is a record type specifying the minimum amount for an
 	// offer.
 	amountType tlv.Type = 8
@@ -62,6 +66,10 @@ var (
 
 // Offer represents a bolt 12 offer.
 type Offer struct {
+	// Chainhash is the genesis block hash of the network that the offer is
+	// for.
+	Chainhash lntypes.Hash
+
 	// MinimumAmount is an optional minimum amount for the offer.
 	MinimumAmount lnwire.MilliSatoshi
 
@@ -105,6 +113,14 @@ var _ tlvTree = (*Offer)(nil)
 // records returns a set of tlv records for all of the offer's populated fields.
 func (o *Offer) records() ([]tlv.Record, error) {
 	var records []tlv.Record
+
+	if o.Chainhash != lntypes.ZeroHash {
+		var chainHash [32]byte
+		copy(chainHash[:], o.Chainhash[:])
+
+		record := tlv.MakePrimitiveRecord(chainType, &chainHash)
+		records = append(records, record)
+	}
 
 	if o.MinimumAmount != 0 {
 		amountMin := uint64(o.MinimumAmount)
@@ -250,11 +266,12 @@ func DecodeOffer(offerBytes []byte) (*Offer, error) {
 		amountMin                     uint64
 		expirySeconds                 uint64
 		features, description, issuer []byte
-		nodeID                        [32]byte
+		chainHash, nodeID             [32]byte
 		signature                     [64]byte
 	)
 
 	records := []tlv.Record{
+		tlv.MakePrimitiveRecord(chainType, &chainHash),
 		tu64Record(amountType, &amountMin),
 		tlv.MakePrimitiveRecord(descriptionType, &description),
 		tlv.MakePrimitiveRecord(featuresType, &features),
@@ -279,6 +296,13 @@ func DecodeOffer(offerBytes []byte) (*Offer, error) {
 
 	// Add typed values to our offer that were decoded using intermediate
 	// vars.
+	if _, ok := tlvMap[chainType]; ok {
+		offer.Chainhash, err = lntypes.MakeHash(chainHash[:])
+		if err != nil {
+			return nil, fmt.Errorf("chain hash: %w", err)
+		}
+	}
+
 	if _, ok := tlvMap[amountType]; ok {
 		offer.MinimumAmount = lnwire.MilliSatoshi(amountMin)
 	}
