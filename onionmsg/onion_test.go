@@ -119,6 +119,17 @@ func TestBlindedToSphinx(t *testing.T) {
 			EncryptedData:    encryptedData1,
 			FinalHopPayloads: finalPayload,
 		}
+
+		// Create a reply path an onion payload including it.
+		replyPath = &lnwire.ReplyPath{
+			FirstNodeID:   pubkeys[0],
+			BlindingPoint: pubkeys[1],
+		}
+
+		onion1WithReplyPath = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData1,
+			ReplyPath:     replyPath,
+		}
 	)
 
 	// Finally, encode all payloads for our test as tlv streams.
@@ -141,9 +152,15 @@ func TestBlindedToSphinx(t *testing.T) {
 	)
 	require.NoError(t, err, "payload 1 with final payload")
 
+	payload1WithReplyPath, err := lnwire.EncodeOnionMessagePayload(
+		onion1WithReplyPath,
+	)
+	require.NoError(t, err, "payload 1 with reply path")
+
 	tests := []struct {
 		name         string
 		blindedPath  *sphinx.BlindedPath
+		replyPath    *lnwire.ReplyPath
 		finalPayload []*lnwire.FinalHopPayload
 		expectedPath *sphinx.PaymentPath
 	}{
@@ -260,12 +277,42 @@ func TestBlindedToSphinx(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "reply path",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0, encryptedData1,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1], pubkeys[2],
+				},
+			},
+			replyPath: replyPath,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1WithReplyPath,
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			actualPath, err := blindedToSphinx(
-				testCase.blindedPath, testCase.finalPayload,
+				testCase.blindedPath, testCase.replyPath,
+				testCase.finalPayload,
 			)
 			require.NoError(t, err)
 

@@ -70,7 +70,8 @@ func createPathToBlind(path []*btcec.PublicKey,
 // be wrapped up in an onion, encoding the TLV payload for each hop along the
 // way.
 func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
-	finalPayloads []*lnwire.FinalHopPayload) (*sphinx.PaymentPath, error) {
+	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload) (
+	*sphinx.PaymentPath, error) {
 
 	var sphinxPath sphinx.PaymentPath
 
@@ -87,9 +88,10 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
 		}
 
 		// If we're on the final hop, also include the tlvs intended
-		// for the final hop.
+		// for the final hop and the reply path (if provided).
 		if i == len(blindedRoute.EncryptedData)-1 {
 			payload.FinalHopPayloads = finalPayloads
+			payload.ReplyPath = replyPath
 		}
 
 		// Encode the tlv stream for inclusion in our message.
@@ -154,7 +156,7 @@ func createOnionMessage(path []*btcec.PublicKey,
 		return nil, fmt.Errorf("blinded path: %w", err)
 	}
 
-	sphinxPath, err := blindedToSphinx(blindedPath, finalPayloads)
+	sphinxPath, err := blindedToSphinx(blindedPath, nil, finalPayloads)
 	if err != nil {
 		return nil, fmt.Errorf("could not create sphinx path: %w", err)
 	}
