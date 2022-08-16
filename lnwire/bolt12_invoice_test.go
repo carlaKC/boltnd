@@ -32,6 +32,12 @@ func TestInvoiceEncoding(t *testing.T) {
 		encoded *Invoice
 	}{
 		{
+			name: "chain hash",
+			encoded: &Invoice{
+				Chainhash: hash,
+			},
+		},
+		{
 			name: "offer id",
 			encoded: &Invoice{
 				OfferID: hash,

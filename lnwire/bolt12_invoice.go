@@ -13,6 +13,9 @@ import (
 )
 
 const (
+	// invChainType is a record containing the chain hash for the invoice.
+	invChainType tlv.Type = 2
+
 	// invOfferIDType is a record holding the offer ID that an invoice is
 	// associated with.
 	invOfferIDType tlv.Type = 4
@@ -78,6 +81,10 @@ var (
 
 // Invoice represents a bolt 12 invoice.
 type Invoice struct {
+	// Chainhash is the hash of the genesis block of the chain that the
+	// invoice is for.
+	Chainhash lntypes.Hash
+
 	// OfferID is the merkle root of the offer this invoice is associated
 	// with.
 	OfferID lntypes.Hash
@@ -174,6 +181,14 @@ func (i *Invoice) Validate() error {
 // records returns a set of tlv records for all the non-nil invoice fields.
 func (i *Invoice) records() ([]tlv.Record, error) {
 	var records []tlv.Record
+
+	if i.Chainhash != lntypes.ZeroHash {
+		var chainhash [32]byte
+		copy(chainhash[:], i.Chainhash[:])
+
+		record := tlv.MakePrimitiveRecord(invChainType, &chainhash)
+		records = append(records, record)
+	}
 
 	if i.OfferID != lntypes.ZeroHash {
 		var offerID [32]byte
@@ -296,7 +311,7 @@ func EncodeInvoice(i *Invoice) ([]byte, error) {
 func DecodeInvoice(b []byte) (*Invoice, error) {
 	var (
 		i                                = &Invoice{}
-		offerID, payHash                 [32]byte
+		chainHash, offerID, payHash      [32]byte
 		amount                           uint64
 		features, description, payerNote []byte
 		createdAt                        uint64
@@ -304,6 +319,7 @@ func DecodeInvoice(b []byte) (*Invoice, error) {
 		signature                        [64]byte
 	)
 	records := []tlv.Record{
+		tlv.MakePrimitiveRecord(invChainType, &chainHash),
 		tlv.MakePrimitiveRecord(invOfferIDType, &offerID),
 		tlv.MakePrimitiveRecord(invAmountType, &amount),
 		tlv.MakePrimitiveRecord(invDescType, &description),
@@ -329,6 +345,13 @@ func DecodeInvoice(b []byte) (*Invoice, error) {
 	tlvMap, err := stream.DecodeWithParsedTypes(r)
 	if err != nil {
 		return nil, fmt.Errorf("decode stream: %w", err)
+	}
+
+	if _, ok := tlvMap[invChainType]; ok {
+		i.Chainhash, err = lntypes.MakeHash(chainHash[:])
+		if err != nil {
+			return nil, fmt.Errorf("chain hash: %w", err)
+		}
 	}
 
 	if _, ok := tlvMap[invOfferIDType]; ok {

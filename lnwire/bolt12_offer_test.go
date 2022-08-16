@@ -18,6 +18,9 @@ import (
 // where other fields are not set.
 func TestOfferEncoding(t *testing.T) {
 	sig := [64]byte{4, 5, 6}
+	chainHashBytes := [32]byte{1, 2, 3}
+	chainHash, err := lntypes.MakeHash(chainHashBytes[:])
+	require.NoError(t, err, "chain hash")
 
 	// Pubkeys are expressed as x-only.
 	pubkey := testutils.GetPubkeys(t, 1)[0]
@@ -28,6 +31,12 @@ func TestOfferEncoding(t *testing.T) {
 		name  string
 		offer *Offer
 	}{
+		{
+			name: "chain hash",
+			offer: &Offer{
+				Chainhash: chainHash,
+			},
+		},
 		{
 			name: "min amount - zeros truncated",
 			offer: &Offer{

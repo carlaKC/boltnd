@@ -14,6 +14,10 @@ import (
 )
 
 const (
+	// invReqChainType is a record containing the chain hash for the invoice
+	// request.
+	invReqChainType tlv.Type = 2
+
 	// invReqOfferIDType is a record containing the associated offer ID.
 	invReqOfferIDType tlv.Type = 4
 
@@ -78,6 +82,10 @@ var (
 
 // InvoiceRequest represents a bolt 12 request for an invoice.
 type InvoiceRequest struct {
+	// Chainhash is the hash of the genesis block of the chain that the
+	// invoice request is for.
+	Chainhash lntypes.Hash
+
 	// OfferID is the merkle root of the offer this request is associated
 	// with.
 	OfferID lntypes.Hash
@@ -218,6 +226,14 @@ func (i *InvoiceRequest) Validate() error {
 func (i *InvoiceRequest) records() ([]tlv.Record, error) {
 	var records []tlv.Record
 
+	if i.Chainhash != lntypes.ZeroHash {
+		var chainhash [32]byte
+		copy(chainhash[:], i.Chainhash[:])
+
+		record := tlv.MakePrimitiveRecord(invReqChainType, &chainhash)
+		records = append(records, record)
+	}
+
 	if i.OfferID != lntypes.ZeroHash {
 		var offerID [32]byte
 		copy(offerID[:], i.OfferID[:])
@@ -308,13 +324,14 @@ func EncodeInvoiceRequest(i *InvoiceRequest) ([]byte, error) {
 func DecodeInvoiceRequest(b []byte) (*InvoiceRequest, error) {
 	var (
 		i                   = &InvoiceRequest{}
-		offerID             [32]byte
+		chainHash, offerID  [32]byte
 		amount              uint64
 		features, payerNote []byte
 		signature           [64]byte
 	)
 
 	records := []tlv.Record{
+		tlv.MakePrimitiveRecord(invReqChainType, &chainHash),
 		tlv.MakePrimitiveRecord(invReqOfferIDType, &offerID),
 		tlv.MakePrimitiveRecord(invReqAmountType, &amount),
 		tlv.MakePrimitiveRecord(invReqFeaturesType, &features),
@@ -334,6 +351,13 @@ func DecodeInvoiceRequest(b []byte) (*InvoiceRequest, error) {
 	tlvMap, err := stream.DecodeWithParsedTypes(r)
 	if err != nil {
 		return nil, fmt.Errorf("decode stream: %w", err)
+	}
+
+	if _, ok := tlvMap[invReqChainType]; ok {
+		i.Chainhash, err = lntypes.MakeHash(chainHash[:])
+		if err != nil {
+			return nil, fmt.Errorf("chain hash: %w", err)
+		}
 	}
 
 	if _, ok := tlvMap[invReqOfferIDType]; ok {
