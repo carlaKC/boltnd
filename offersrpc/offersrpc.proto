@@ -117,4 +117,8 @@ message SubscribeOnionPayloadResponse {
     // Value is the raw bytes extracted from the tlv type that the subscription
     // is for.
     bytes value = 1;
+
+    // Reply path is an optional reply path included by the sender to receive
+    // responses to this onion message on.
+    BlindedPath reply_path = 2;
 }

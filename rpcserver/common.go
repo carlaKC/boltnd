@@ -55,3 +55,25 @@ func parseReplyPath(req *offersrpc.BlindedPath) (*lnwire.ReplyPath, error) {
 
 	return replyPath, nil
 }
+
+// composeReplyPath coverts a reply path to a rpc blinded path.
+func composeReplyPath(resp *lnwire.ReplyPath) *offersrpc.BlindedPath {
+	if resp == nil {
+		return nil
+	}
+
+	blindedPath := &offersrpc.BlindedPath{
+		IntroductionNode: resp.FirstNodeID.SerializeCompressed(),
+		BlindingPoint:    resp.BlindingPoint.SerializeCompressed(),
+		Hops:             make([]*offersrpc.BlindedHop, len(resp.Hops)),
+	}
+
+	for i, hop := range resp.Hops {
+		blindedPath.Hops[i] = &offersrpc.BlindedHop{
+			BlindedNodeId: hop.BlindedNodeID.SerializeCompressed(),
+			EncrypedData:  hop.EncryptedData,
+		}
+	}
+
+	return blindedPath
+}

@@ -158,7 +158,7 @@ func TestHandleSubscribOnionPayload(t *testing.T) {
 		tlvType     tlv.Type = 100
 
 		quit     = make(chan struct{})
-		incoming = make(chan []byte)
+		incoming = make(chan onionPayloadResponse)
 
 		s = newServerTest(t)
 	)
@@ -186,7 +186,9 @@ func TestHandleSubscribOnionPayload(t *testing.T) {
 		Value: []byte{6, 9},
 	}
 	mockOnionPayloadSend(s.offerMock.Mock, resp, nil)
-	incoming <- resp.Value
+	incoming <- onionPayloadResponse{
+		payload: resp.Value,
+	}
 
 	// To shutdown out test, cancel our context and assert that we exit
 	// with a canceled code.
