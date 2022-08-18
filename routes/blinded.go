@@ -56,6 +56,35 @@ func NewBlindedRouteGenerator(lnd Lnd,
 	}
 }
 
+// BlindedRoute produces a blinded route to our node with the set of features
+// requested.
+func (b *BlindedRouteGenerator) BlindedRoute(ctx context.Context,
+	features []lndwire.FeatureBit) (*sphinx.BlindedPath, error) {
+
+	canRelay := createRelayCheck(features)
+	peers, err := getRelayingPeers(ctx, b.lnd, canRelay)
+	if err != nil {
+		return nil, fmt.Errorf("get relaying peers: %w", err)
+	}
+
+	hops, err := buildBlindedRoute(peers, b.pubkey)
+	if err != nil {
+		return nil, fmt.Errorf("blinded route: %w", err)
+	}
+
+	sessionKey, err := btcec.NewPrivateKey()
+	if err != nil {
+		return nil, fmt.Errorf("session key: %w", err)
+	}
+
+	route, err := sphinx.BuildBlindedPath(sessionKey, hops)
+	if err != nil {
+		return nil, fmt.Errorf("sphinx blinded route: %w", err)
+	}
+
+	return route, nil
+}
+
 // buildBlindedRoute produces a blinded route from a set of peers that can relay
 // onion messages to our node.
 //
