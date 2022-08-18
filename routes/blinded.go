@@ -46,6 +46,10 @@ type BlindedRouteGenerator struct {
 	pubkey *btcec.PublicKey
 }
 
+// Compile time check that blinded path generator implements the generator
+// interface.
+var _ Generator = (*BlindedRouteGenerator)(nil)
+
 // NewBlindedRouteGenerator creates a blinded route generator.
 func NewBlindedRouteGenerator(lnd Lnd,
 	pubkey *btcec.PublicKey) *BlindedRouteGenerator {
