@@ -60,6 +60,7 @@ type OnionMessenger interface {
 	// SendMessage sends an onion message to the peer specified. A set of
 	// optional TLVs for the target peer can be included in final payloads.
 	SendMessage(ctx context.Context, peer route.Vertex,
+		replyPath *lnwire.ReplyPath,
 		finalPayloads []*lnwire.FinalHopPayload) error
 
 	// RegisterHandler adds a handler onion message payloads delivered to

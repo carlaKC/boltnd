@@ -270,7 +270,7 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 
 	ctxb := context.Background()
 
-	err := messenger.SendMessage(ctxb, testCase.peer, nil)
+	err := messenger.SendMessage(ctxb, testCase.peer, nil, nil)
 
 	// All of our errors are wrapped, so we can just check err.Is the
 	// error we expect (also works for nil).

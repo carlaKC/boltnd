@@ -275,13 +275,15 @@ func (m *Messenger) handleRegistration(request *registerHandler,
 	}
 }
 
-// SendMessage sends an onion message to the peer provided. If we are not
-// currently connected to a peer, the messenger will directly connect to it
-// and send the message.
+// SendMessage sends an onion message to the peer provided. The message can
+// optionally include a reply path for the recipient to use for replies and
+// payloads for the final hop. If we are not currently connected to a peer, the
+// messenger will directly connect to it and send the message.
 func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
+	replyPath *lnwire.ReplyPath,
 	finalHopPayloads []*lnwire.FinalHopPayload) error {
 
-	msg, err := customOnionMessage(peer, nil, finalHopPayloads)
+	msg, err := customOnionMessage(peer, replyPath, finalHopPayloads)
 	if err != nil {
 		return fmt.Errorf("could not create message: %w", err)
 	}
