@@ -29,7 +29,7 @@ func (s *Server) SubscribeOnionPayload(
 
 	// Create a channel to receive incoming payloads on. Buffer it by 1
 	// so that we never risk blocking the calling function.
-	incomingMessages := make(chan []byte, 1)
+	incomingMessages := make(chan onionPayloadResponse, 1)
 
 	return handleSubscribeOnionPayload(
 		stream.Context(), tlvType, incomingMessages, s.quit,
@@ -50,20 +50,30 @@ func parseSubscribeOnionPayloadRequest(
 	return tlvType, nil
 }
 
+type onionPayloadResponse struct {
+	payload   []byte
+	replyPath *lnwire.ReplyPath
+}
+
 // handleSubscribeOnionPayload creates a subscription for onion message
 // payloads with tlvs of the provided type.
 func handleSubscribeOnionPayload(ctx context.Context, tlvType tlv.Type,
-	incoming chan []byte, quit chan struct{},
+	incoming chan onionPayloadResponse, quit chan struct{},
 	messenger onionmsg.OnionMessenger,
 	send func(*offersrpc.SubscribeOnionPayloadResponse) error) error {
 
 	// Create an onion message handler which will consume messages from
 	// our incoming channel, dropping messages if our server is shut down
 	// or the client cancels their context.
-	handler := func(_ *lnwire.ReplyPath, _ []byte, payload []byte) error {
+	handler := func(replyPath *lnwire.ReplyPath, _ []byte,
+		payload []byte) error {
+
 		select {
 		// Pass message to our incoming channel.
-		case incoming <- payload:
+		case incoming <- onionPayloadResponse{
+			replyPath: replyPath,
+			payload:   payload,
+		}:
 			return nil
 
 		// Exit on client cancel.
@@ -99,7 +109,8 @@ func handleSubscribeOnionPayload(ctx context.Context, tlvType tlv.Type,
 		select {
 		case msg := <-incoming:
 			resp := &offersrpc.SubscribeOnionPayloadResponse{
-				Value: msg,
+				Value:     msg.payload,
+				ReplyPath: composeReplyPath(msg.replyPath),
 			}
 
 			if err := send(resp); err != nil {

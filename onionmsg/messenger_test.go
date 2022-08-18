@@ -270,7 +270,7 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 
 	ctxb := context.Background()
 
-	err := messenger.SendMessage(ctxb, testCase.peer, nil)
+	err := messenger.SendMessage(ctxb, testCase.peer, nil, nil)
 
 	// All of our errors are wrapped, so we can just check err.Is the
 	// error we expect (also works for nil).
@@ -336,7 +336,7 @@ func TestHandleOnionMessage(t *testing.T) {
 	require.NoError(t, err, "pubkey")
 
 	// Create a single valid message that we can use across test cases.
-	msg, err := customOnionMessage(nodeKey, nil)
+	msg, err := customOnionMessage(nodeKey, nil, nil)
 	require.NoError(t, err, "create msg")
 
 	mockErr := errors.New("mock err")
@@ -618,7 +618,7 @@ func TestReceiveOnionMessages(t *testing.T) {
 	)
 	require.NoError(t, err, "node pubkey")
 
-	msg, err := customOnionMessage(nodeVertex, nil)
+	msg, err := customOnionMessage(nodeVertex, nil, nil)
 	require.NoError(t, err, "custom message")
 
 	mockErr := errors.New("mock")
