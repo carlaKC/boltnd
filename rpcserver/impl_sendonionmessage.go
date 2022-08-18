@@ -22,12 +22,12 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 		return nil, err
 	}
 
-	pubkey, finalHop, err := parseSendOnionMessageRequest(req)
+	pubkey, replyPath, finalHop, err := parseSendOnionMessageRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.onionMsgr.SendMessage(ctx, pubkey, nil, finalHop)
+	err = s.onionMsgr.SendMessage(ctx, pubkey, replyPath, finalHop)
 	if err != nil {
 		return nil, status.Errorf(
 			codes.Internal, "send message failed: %v", err,
@@ -41,19 +41,24 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 // by SendOnionMessageRequest. All errors returned *must* include a grpc status
 // code.
 func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
-	route.Vertex, []*lnwire.FinalHopPayload, error) {
+	route.Vertex, *lnwire.ReplyPath, []*lnwire.FinalHopPayload, error) {
 
 	pubkey, err := route.NewVertexFromBytes(req.Pubkey)
 	if err != nil {
-		return route.Vertex{}, nil, status.Errorf(
+		return route.Vertex{}, nil, nil, status.Errorf(
 			codes.InvalidArgument, "peer pubkey: %v", err,
 		)
+	}
+
+	replyPath, err := parseReplyPath(req.ReplyPath)
+	if err != nil {
+		return route.Vertex{}, nil, nil, err
 	}
 
 	// If we have no final payloads, just return nil (this makes it easier
 	// for testing than having an empty slice).
 	if len(req.FinalPayloads) == 0 {
-		return pubkey, nil, nil
+		return pubkey, replyPath, nil, nil
 	}
 
 	finalHopPayloads := make(
@@ -67,7 +72,7 @@ func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 		}
 
 		if err := finalPayload.Validate(); err != nil {
-			return route.Vertex{}, nil, status.Errorf(
+			return route.Vertex{}, nil, nil, status.Errorf(
 				codes.InvalidArgument, err.Error(),
 			)
 		}
@@ -75,5 +80,5 @@ func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 		finalHopPayloads = append(finalHopPayloads, finalPayload)
 	}
 
-	return pubkey, finalHopPayloads, nil
+	return pubkey, replyPath, finalHopPayloads, nil
 }

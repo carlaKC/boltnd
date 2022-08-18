@@ -30,6 +30,33 @@ message SendOnionMessageRequest {
     // reserved for the final hop, so all values in the map must be in this
     // in this range.
     map<uint64, bytes> final_payloads = 2;
+
+    // An optional blinded path that can be used to supply the recipient with
+    // a path to send replies over.
+    BlindedPath reply_path = 3;
+}
+
+message BlindedPath {
+    // The un-blinded pubkey of the introduction node for the blinded path.
+    bytes introduction_node = 1;
+
+    // The encrypted data for the introduction node.
+    bytes introduction_encrypted_data = 2;
+
+    // The blinding point is the ephemeral key used to blind the blinded hops
+    // in the route.
+    bytes blinding_point = 3;
+
+    // A set of blinded hops following the introduction point.
+    repeated BlindedHop hops = 4;
+}
+
+message BlindedHop {
+    // The blinded node pubkey for the hop.
+    bytes blinded_node_id = 1;
+
+    // The encrypted data blob for the hop.
+    bytes encryped_data = 2;
 }
 
 message SendOnionMessageResponse {
