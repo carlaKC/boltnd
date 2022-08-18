@@ -8,6 +8,7 @@ import (
 
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
@@ -149,8 +150,29 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	carolB12, cleanup := bolt12Client(t, carol)
 	defer cleanup()
 
-	// Send an onion message from Carol to Bob.
+	// Send an onion message from Carol to Bob, this time including a reply
+	// path to add coverage there.
+	var (
+		pubkeys = testutils.GetPubkeys(t, 3)
+		pubkey0 = pubkeys[0].SerializeCompressed()
+		pubkey1 = pubkeys[1].SerializeCompressed()
+		pubkey2 = pubkeys[2].SerializeCompressed()
+	)
 	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	req = &offersrpc.SendOnionMessageRequest{
+		Pubkey: net.Bob.PubKey[:],
+		ReplyPath: &offersrpc.BlindedPath{
+			IntroductionNode:          pubkey0,
+			IntroductionEncryptedData: []byte{1, 2, 3},
+			BlindingPoint:             pubkey1,
+			Hops: []*offersrpc.BlindedHop{
+				{
+					BlindedNodeId: pubkey2,
+					EncrypedData:  []byte{3, 2, 1},
+				},
+			},
+		},
+	}
 	_, err = carolB12.SendOnionMessage(ctxt, req)
 	require.NoError(t, err, "carol message")
 	cancel()
