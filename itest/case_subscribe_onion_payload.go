@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -64,12 +65,14 @@ func SubscribeOnionPayload(t *testing.T, net *lntest.NetworkHarness) {
 
 	// Setup a closure that will read our received message or error if
 	// nothing is received by a timeout.
-	receiveMessage := func() ([]byte, error) {
+	receiveMessage := func() (*offersrpc.SubscribeOnionPayloadResponse,
+		error) {
+
 		select {
 		// If we receive a message as expected, assert that it is of
 		// the correct type.
 		case msg := <-msgChan:
-			return msg.Value, nil
+			return msg, nil
 
 		// If we received an error, something went wrong.
 		case err := <-errChan:
@@ -135,13 +138,30 @@ func SubscribeOnionPayload(t *testing.T, net *lntest.NetworkHarness) {
 	payload1 := []byte{9, 8, 7}
 	req.FinalPayloads[sub1Req.TlvType] = payload1
 
+	// We'll also include a reply path to test coverage of reply paths in
+	// subscriptions.
+	pubkeys := testutils.GetPubkeys(t, 3)
+
+	req.ReplyPath = &offersrpc.BlindedPath{
+		IntroductionNode: pubkeys[0].SerializeCompressed(),
+		BlindingPoint:    pubkeys[1].SerializeCompressed(),
+		Hops: []*offersrpc.BlindedHop{
+			{
+				BlindedNodeId: pubkeys[2].SerializeCompressed(),
+				EncrypedData:  []byte{1, 2, 3},
+			},
+		},
+	}
+
 	_, err = offersTest.aliceOffers.SendOnionMessage(ctxt, req)
 	require.NoError(t, err, "send payload")
 
 	consumeMessage(client1)
 	payloadReceived, err := receiveMessage()
 	require.NoError(t, err)
-	require.Equal(t, payload1, payloadReceived)
+
+	require.Equal(t, payload1, payloadReceived.Value)
+	assertBlindedPathEqual(t, req.ReplyPath, payloadReceived.ReplyPath)
 
 	// Finally, we test a case where a single onion message contains two
 	// payloads, both belonging to our subscriptions.
@@ -169,10 +189,12 @@ func SubscribeOnionPayload(t *testing.T, net *lntest.NetworkHarness) {
 	consumeMessage(client1)
 	payloadReceived, err = receiveMessage()
 	require.NoError(t, err)
-	require.Equal(t, payload1, payloadReceived)
+	require.Equal(t, payload1, payloadReceived.Value)
+	assertBlindedPathEqual(t, req.ReplyPath, payloadReceived.ReplyPath)
 
 	consumeMessage(client2)
 	payloadReceived, err = receiveMessage()
 	require.NoError(t, err)
-	require.Equal(t, payload2, payloadReceived)
+	require.Equal(t, payload2, payloadReceived.Value)
+	assertBlindedPathEqual(t, req.ReplyPath, payloadReceived.ReplyPath)
 }
