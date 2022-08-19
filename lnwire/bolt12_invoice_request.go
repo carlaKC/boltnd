@@ -16,7 +16,7 @@ import (
 const (
 	// invReqChainType is a record containing the chain hash for the invoice
 	// request.
-	invReqChainType tlv.Type = 2
+	invReqChainType tlv.Type = 3
 
 	// invReqOfferIDType is a record containing the associated offer ID.
 	invReqOfferIDType tlv.Type = 4
