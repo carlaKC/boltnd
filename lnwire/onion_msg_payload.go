@@ -23,13 +23,13 @@ const (
 	// message recipient.
 	encryptedDataTLVType tlv.Type = 4
 
-	// InvoiceNamespaceType is a record containing the sub-namespace of
-	// tlvs that describe an invoice.
-	InvoiceNamespaceType tlv.Type = 64
-
 	// InvoiceRequestNamespaceType is a record containing the sub-namespace
 	// of tlvs that request invoices for offers.
-	InvoiceRequestNamespaceType tlv.Type = 66
+	InvoiceRequestNamespaceType tlv.Type = 64
+
+	// InvoiceNamespaceType is a record containing the sub-namespace of
+	// tlvs that describe an invoice.
+	InvoiceNamespaceType tlv.Type = 66
 )
 
 // ErrNotFinalPayload is returned when a final hop payload is not within the
