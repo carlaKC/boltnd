@@ -14,7 +14,7 @@ import (
 
 const (
 	// invChainType is a record containing the chain hash for the invoice.
-	invChainType tlv.Type = 2
+	invChainType tlv.Type = 3
 
 	// invOfferIDType is a record holding the offer ID that an invoice is
 	// associated with.
@@ -201,7 +201,7 @@ func (i *Invoice) records() ([]tlv.Record, error) {
 	if i.Amount != 0 {
 		amount := uint64(i.Amount)
 
-		record := tlv.MakePrimitiveRecord(invAmountType, &amount)
+		record := tu64Record(invAmountType, &amount)
 		records = append(records, record)
 	}
 
@@ -229,7 +229,7 @@ func (i *Invoice) records() ([]tlv.Record, error) {
 	}
 
 	if i.Quantity != 0 {
-		record := tlv.MakePrimitiveRecord(invQuantityType, &i.Quantity)
+		record := tu64Record(invQuantityType, &i.Quantity)
 		records = append(records, record)
 	}
 
@@ -321,11 +321,11 @@ func DecodeInvoice(b []byte) (*Invoice, error) {
 	records := []tlv.Record{
 		tlv.MakePrimitiveRecord(invChainType, &chainHash),
 		tlv.MakePrimitiveRecord(invOfferIDType, &offerID),
-		tlv.MakePrimitiveRecord(invAmountType, &amount),
+		tu64Record(invAmountType, &amount),
 		tlv.MakePrimitiveRecord(invDescType, &description),
 		tlv.MakePrimitiveRecord(invFeatType, &features),
 		tlv.MakePrimitiveRecord(invNodeIDType, &i.NodeID),
-		tlv.MakePrimitiveRecord(invQuantityType, &i.Quantity),
+		tu64Record(invQuantityType, &i.Quantity),
 		tlv.MakePrimitiveRecord(invPayerKeyType, &i.PayerKey),
 		tlv.MakePrimitiveRecord(invPayerNoteType, &payerNote),
 		tlv.MakePrimitiveRecord(invCreatedAtType, &createdAt),
