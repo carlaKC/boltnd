@@ -245,7 +245,7 @@ func (i *InvoiceRequest) records() ([]tlv.Record, error) {
 	if i.Amount != 0 {
 		amount := uint64(i.Amount)
 
-		record := tlv.MakePrimitiveRecord(invReqAmountType, &amount)
+		record := tu64Record(invReqAmountType, &amount)
 		records = append(records, record)
 	}
 
@@ -261,9 +261,7 @@ func (i *InvoiceRequest) records() ([]tlv.Record, error) {
 	}
 
 	if i.Quantity != 0 {
-		record := tlv.MakePrimitiveRecord(
-			invReqQuantityType, &i.Quantity,
-		)
+		record := tu64Record(invReqQuantityType, &i.Quantity)
 		records = append(records, record)
 	}
 
@@ -333,9 +331,9 @@ func DecodeInvoiceRequest(b []byte) (*InvoiceRequest, error) {
 	records := []tlv.Record{
 		tlv.MakePrimitiveRecord(invReqChainType, &chainHash),
 		tlv.MakePrimitiveRecord(invReqOfferIDType, &offerID),
-		tlv.MakePrimitiveRecord(invReqAmountType, &amount),
+		tu64Record(invReqAmountType, &amount),
 		tlv.MakePrimitiveRecord(invReqFeaturesType, &features),
-		tlv.MakePrimitiveRecord(invReqQuantityType, &i.Quantity),
+		tu64Record(invReqQuantityType, &i.Quantity),
 		tlv.MakePrimitiveRecord(invReqPayerKeyType, &i.PayerKey),
 		tlv.MakePrimitiveRecord(invReqPayerNoteType, &payerNote),
 		tlv.MakePrimitiveRecord(invReqPayerInfoType, &i.PayerInfo),
