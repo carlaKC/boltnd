@@ -118,18 +118,18 @@ func DecodeOnionMessagePayload(o []byte) (*OnionMessagePayload, error) {
 		tlv.MakePrimitiveRecord(
 			encryptedDataTLVType, &onionPayload.EncryptedData,
 		),
-		// Add a record to read invoice sub-namespaces out. Although
-		// this is technically one of our "final hop payload" tlvs, it
-		// is an even value, so we need to include it as a know tlv
-		// here, or decoding will fail. We decode directly into a final
-		// hop payload, so that we can just add it if present later.
-		tlv.MakePrimitiveRecord(InvoiceNamespaceType, &invoicePayload.Value),
 		// Add a record for invoice request sub-namespace so that we
 		// won't fail on the even tlv - reasoning above.
 		tlv.MakePrimitiveRecord(
 			InvoiceRequestNamespaceType,
 			&invoiceRequestPayload.Value,
 		),
+		// Add a record to read invoice sub-namespaces out. Although
+		// this is technically one of our "final hop payload" tlvs, it
+		// is an even value, so we need to include it as a know tlv
+		// here, or decoding will fail. We decode directly into a final
+		// hop payload, so that we can just add it if present later.
+		tlv.MakePrimitiveRecord(InvoiceNamespaceType, &invoicePayload.Value),
 	}
 
 	stream, err := tlv.NewStream(records...)
