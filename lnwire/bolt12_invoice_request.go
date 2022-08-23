@@ -165,6 +165,7 @@ func NewInvoiceRequest(offer *Offer, amount lnwire.MilliSatoshi,
 	}
 
 	request := &InvoiceRequest{
+		Chainhash: offer.Chainhash,
 		OfferID:   offer.MerkleRoot,
 		Amount:    amount,
 		Features:  offer.Features,
