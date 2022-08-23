@@ -24,6 +24,13 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 		sig [64]byte
 	)
 
+	xOnlyPubkey, err := schnorr.ParsePubKey(
+		schnorr.SerializePubKey(
+			pubkey,
+		),
+	)
+	require.NoError(t, err, "schnorr pubkey")
+
 	copy(hash[:], []byte{1, 2, 3})
 	copy(sig[:], []byte{4, 5, 6})
 
@@ -54,7 +61,7 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 			encoded: &InvoiceRequest{
 				// Include a non-empty record so that our merkle
 				// tree can be calculated on decode.
-				PayerKey: pubkey,
+				PayerKey: xOnlyPubkey,
 				Features: lnwire.NewFeatureVector(
 					lnwire.NewRawFeatureVector(),
 					lnwire.Features,
@@ -81,7 +88,7 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 		{
 			name: "payer key",
 			encoded: &InvoiceRequest{
-				PayerKey: pubkey,
+				PayerKey: xOnlyPubkey,
 			},
 		},
 		{
@@ -101,7 +108,7 @@ func TestInvoiceRequestEncoding(t *testing.T) {
 			encoded: &InvoiceRequest{
 				// Include a non-sig record so that our merkle
 				// tree can be calculated on decode.
-				PayerKey:  pubkey,
+				PayerKey:  xOnlyPubkey,
 				Signature: &sig,
 			},
 		},
