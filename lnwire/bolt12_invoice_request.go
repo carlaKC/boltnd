@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -266,8 +267,15 @@ func (i *InvoiceRequest) records() ([]tlv.Record, error) {
 	}
 
 	if i.PayerKey != nil {
+		// Serialized as x-only pubkey.
+		// Note: the spec currently indicates that this is a `point`,
+		// but CL still implement it as `point32`, so we serialize
+		// accordingly.
+		var payerKey [32]byte
+		copy(payerKey[:], schnorr.SerializePubKey(i.PayerKey))
+
 		record := tlv.MakePrimitiveRecord(
-			invReqPayerKeyType, &i.PayerKey,
+			invReqPayerKeyType, &payerKey,
 		)
 		records = append(records, record)
 	}
@@ -321,11 +329,11 @@ func EncodeInvoiceRequest(i *InvoiceRequest) ([]byte, error) {
 // DecodeInvoiceRequest decodes a bolt12 invoice request tlv stream.
 func DecodeInvoiceRequest(b []byte) (*InvoiceRequest, error) {
 	var (
-		i                   = &InvoiceRequest{}
-		chainHash, offerID  [32]byte
-		amount              uint64
-		features, payerNote []byte
-		signature           [64]byte
+		i                            = &InvoiceRequest{}
+		chainHash, offerID, payerKey [32]byte
+		amount                       uint64
+		features, payerNote          []byte
+		signature                    [64]byte
 	)
 
 	records := []tlv.Record{
@@ -334,7 +342,7 @@ func DecodeInvoiceRequest(b []byte) (*InvoiceRequest, error) {
 		tu64Record(invReqAmountType, &amount),
 		tlv.MakePrimitiveRecord(invReqFeaturesType, &features),
 		tu64Record(invReqQuantityType, &i.Quantity),
-		tlv.MakePrimitiveRecord(invReqPayerKeyType, &i.PayerKey),
+		tlv.MakePrimitiveRecord(invReqPayerKeyType, &payerKey),
 		tlv.MakePrimitiveRecord(invReqPayerNoteType, &payerNote),
 		tlv.MakePrimitiveRecord(invReqPayerInfoType, &i.PayerInfo),
 		tlv.MakePrimitiveRecord(invReqSignatureType, &signature),
@@ -373,6 +381,18 @@ func DecodeInvoiceRequest(b []byte) (*InvoiceRequest, error) {
 	i.Features, err = decodeFeaturesRecord(features, found)
 	if err != nil {
 		return nil, fmt.Errorf("decode features: %w", err)
+	}
+
+	if _, ok := tlvMap[invReqPayerKeyType]; ok {
+		// Note: the spec currently indicates that this is a `point`,
+		// but CL still implement it as `point32`, so we serialize
+		// accordingly.
+		pubkey, err := schnorr.ParsePubKey(payerKey[:])
+		if err != nil {
+			return nil, fmt.Errorf("invalid payer key: %w", err)
+		}
+
+		i.PayerKey = pubkey
 	}
 
 	if _, ok := tlvMap[invReqPayerNoteType]; ok {
