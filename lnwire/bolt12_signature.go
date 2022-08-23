@@ -24,7 +24,7 @@ var (
 
 	// invoiceRequestTag is the message tag used to tag signatures on
 	// invoice requests.
-	invoiceRequestTag = []byte("invoicerequest")
+	invoiceRequestTag = []byte("invoice_request")
 
 	// signatureTag is the field tag used to tag signatures (TLV type= 240)
 	// for offers.
