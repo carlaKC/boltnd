@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightninglabs/lndclient"
@@ -399,7 +400,9 @@ func TestHandlePaymentResult(t *testing.T) {
 
 	// Create a coordinator, we don't need any deps because we're just
 	// testing one internal function.
-	coordinator := NewCoordinator(nil, nil, nil, nil)
+	coordinator := NewCoordinator(
+		chaincfg.RegressionNetParams, nil, nil, nil, nil,
+	)
 
 	// First, test payment results for an unknown offer.
 	err = coordinator.handlePaymentResult(id1, true)
