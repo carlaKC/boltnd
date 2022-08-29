@@ -100,8 +100,12 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 		return fmt.Errorf("could not start onion messenger: %w", err)
 	}
 
+	routeGenerator := routes.NewBlindedRouteGenerator(
+		lnd.Client, nodeKeyECDH.PubKey(),
+	)
+
 	s.offerCoordinator = offers.NewCoordinator(
-		lnd.Router, s.onionMsgr, s.requestShutdown,
+		lnd.Router, s.onionMsgr, routeGenerator, s.requestShutdown,
 	)
 
 	if err := s.offerCoordinator.Start(); err != nil {

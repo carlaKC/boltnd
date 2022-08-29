@@ -17,10 +17,11 @@ var defaultTimeout = time.Second * 5
 // offerCoordinatorTest contains the components required to run various tests
 // concerning the offer coordinator.
 type offerCoordinatorTest struct {
-	t           *testing.T
-	lnd         *testutils.MockLND
-	mock        *mock.Mock
-	coordinator *Coordinator
+	t              *testing.T
+	lnd            *testutils.MockLND
+	routeGenerator *testutils.MockRouteGenerator
+	mock           *mock.Mock
+	coordinator    *Coordinator
 
 	// Embed our onion messenger interface so that the test embeds all
 	// functionality by default.
@@ -29,13 +30,15 @@ type offerCoordinatorTest struct {
 
 func newOfferCoordinatorTest(t *testing.T) *offerCoordinatorTest {
 	testHelper := &offerCoordinatorTest{
-		t:    t,
-		lnd:  testutils.NewMockLnd(),
-		mock: &mock.Mock{},
+		t:              t,
+		lnd:            testutils.NewMockLnd(),
+		routeGenerator: testutils.NewMockRouteGenerator(),
+		mock:           &mock.Mock{},
 	}
 
 	testHelper.coordinator = NewCoordinator(
-		testHelper.lnd, testHelper, testHelper.gracefulShutdown,
+		testHelper.lnd, testHelper, testHelper.routeGenerator,
+		testHelper.gracefulShutdown,
 	)
 
 	return testHelper
@@ -62,8 +65,10 @@ func (o *offerCoordinatorTest) stop() {
 	// Assert that we've made all the mocked calls we expect.
 	o.mock.AssertExpectations(o.t)
 
-	// Assert that our lnd mock has also had all the calls we expect.
+	// Assert that our lnd and path selection mocks have also had all the
+	// calls we expect.
 	o.lnd.Mock.AssertExpectations(o.t)
+	o.routeGenerator.Mock.AssertExpectations(o.t)
 }
 
 // gracefulShutdown mocks a request for graceful shutdown due to the error
