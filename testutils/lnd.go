@@ -172,3 +172,27 @@ func MockDeriveSharedKey(m *mock.Mock, ephemeral *btcec.PublicKey,
 		key, err,
 	)
 }
+
+// ListChannels mocks a call to lnd's list channels api.
+func (m *MockLND) ListChannels(ctx context.Context, activeOnly,
+	publicOnly bool) ([]lndclient.ChannelInfo, error) {
+
+	args := m.Mock.MethodCalled(
+		"ListChannels", ctx, activeOnly, publicOnly,
+	)
+
+	channels := args.Get(0).([]lndclient.ChannelInfo)
+	return channels, args.Error(1)
+}
+
+// MockListChannels primes our mock to return the channel list and error
+// provided when ListChannels is called.
+func MockListChannels(m *mock.Mock, activeOnly, publicOnly bool,
+	channels []lndclient.ChannelInfo, err error) {
+
+	m.On(
+		"ListChannels", mock.Anything, activeOnly, publicOnly,
+	).Once().Return(
+		channels, err,
+	)
+}
