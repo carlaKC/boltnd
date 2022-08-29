@@ -11,6 +11,7 @@ import (
 
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/onionmsg"
+	"github.com/carlakc/boltnd/routes"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -91,6 +92,9 @@ type Coordinator struct {
 	// required for offers.
 	onionMessenger onionmsg.OnionMessenger
 
+	// routeGenerator provides blinded route creation.
+	routeGenerator routes.Generator
+
 	// outboundOffers maps an offer ID to the current state of the offer
 	// exchange. This map should *only* be accessed by the handleOffers
 	// control loop to ensure consistency.
@@ -115,11 +119,13 @@ type Coordinator struct {
 
 // NewCoordinator creates a new offer coordinator.
 func NewCoordinator(lnd LNDOffers, onionMsgr onionmsg.OnionMessenger,
+	routeGenerator routes.Generator,
 	requestShutdown func(err error)) *Coordinator {
 
 	return &Coordinator{
 		lnd:              lnd,
 		onionMessenger:   onionMsgr,
+		routeGenerator:   routeGenerator,
 		outboundOffers:   make(map[lntypes.Hash]*activeOfferState),
 		paymentResults:   make(chan *paymentResult),
 		incomingInvoices: make(chan []byte),

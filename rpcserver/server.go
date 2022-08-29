@@ -9,6 +9,7 @@ import (
 	"github.com/carlakc/boltnd/offers"
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/onionmsg"
+	"github.com/carlakc/boltnd/routes"
 	"github.com/lightninglabs/lndclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -92,8 +93,12 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 		return fmt.Errorf("could not start onion messenger: %w", err)
 	}
 
+	routeGenerator := routes.NewBlindedRouteGenerator(
+		lnd.Client, nodeKeyECDH.PubKey(),
+	)
+
 	s.offerCoordinator = offers.NewCoordinator(
-		lnd.Router, s.onionMsgr, s.requestShutdown,
+		lnd.Router, s.onionMsgr, routeGenerator, s.requestShutdown,
 	)
 
 	if err := s.offerCoordinator.Start(); err != nil {
