@@ -7,6 +7,7 @@ import (
 
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightninglabs/lndclient"
+	lndwire "github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -200,6 +201,83 @@ func TestGetRelayingPeers(t *testing.T) {
 
 			require.True(t, errors.Is(err, testCase.err))
 			require.Equal(t, testCase.peers, peers)
+		})
+	}
+}
+
+// TestCreateRelayCheck tests the canRelay closure used to filter peers.
+func TestCreateRelayCheck(t *testing.T) {
+	var (
+		// nodeChannels is a non-empty set of channels, we don't fill
+		// values because they're not used.
+		nodeChannels = []lndclient.ChannelEdge{
+			{}, {},
+		}
+	)
+	tests := []struct {
+		name     string
+		features []lndwire.FeatureBit
+		nodeInfo *lndclient.NodeInfo
+		err      error
+	}{
+		{
+			name: "no channels",
+			nodeInfo: &lndclient.NodeInfo{
+				Channels: nil,
+			},
+			err: ErrNoPeerChannels,
+		},
+		{
+			name: "no node info",
+			nodeInfo: &lndclient.NodeInfo{
+				Channels: nodeChannels,
+				Node:     nil,
+			},
+			err: ErrNoNodeInfo,
+		},
+		{
+			features: []lndwire.FeatureBit{
+				lndwire.AnchorsRequired,
+				lndwire.DataLossProtectRequired,
+			},
+			nodeInfo: &lndclient.NodeInfo{
+				Channels: nodeChannels,
+				Node: &lndclient.Node{
+					Features: []lndwire.FeatureBit{
+						lndwire.AnchorsRequired,
+					},
+				},
+			},
+			err: ErrFeatureMismatch,
+		},
+		{
+			// Test the case where the node has all our required
+			// features, but might not have some of our optional
+			// ones.
+			name: "features ok",
+			features: []lndwire.FeatureBit{
+				lndwire.AnchorsRequired,
+				lndwire.AMPOptional,
+			},
+			nodeInfo: &lndclient.NodeInfo{
+				Channels: nodeChannels,
+				Node: &lndclient.Node{
+					Features: []lndwire.FeatureBit{
+						lndwire.AnchorsRequired,
+					},
+				},
+			},
+			err: nil,
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			canRelay := createRelayCheck(testCase.features)
+			err := canRelay(testCase.nodeInfo)
+			require.True(t, errors.Is(err, testCase.err))
 		})
 	}
 }

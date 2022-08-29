@@ -18,6 +18,17 @@ var (
 	ErrNoChannels = errors.New("can't create blinded route with no " +
 		"channels")
 
+	// ErrNoPeerChannels is returned when a peer does not have any public
+	// channels, so it can't be used to relay onion messages.
+	ErrNoPeerChannels = errors.New("peer has no channels")
+
+	// ErrNoNodeInfo is returned when we don't have node information
+	// available for a peer (graph sync is imperfect).
+	ErrNoNodeInfo = errors.New("no node information available")
+
+	// ErrFeatureMismatch is returned when a peer doesn't have the feautres
+	// we need for onion relay.
+	ErrFeatureMismatch = errors.New("insufficient node features")
 )
 
 // BlindedRouteGenerator produces blinded routes.
@@ -97,3 +108,35 @@ func getRelayingPeers(ctx context.Context, lnd Lnd,
 	return activePeers, nil
 }
 
+// createRelayCheck returns a function that can be used to check a node's
+// channels and features to determine whether we can use it to relay onions.
+func createRelayCheck(features []lndwire.FeatureBit) canRelayFunc {
+	return func(nodeInfo *lndclient.NodeInfo) error {
+		// If the node has no public channels, it likely won't be
+		// reachable.
+		if len(nodeInfo.Channels) == 0 {
+			return ErrNoPeerChannels
+		}
+
+		// If we don't have node information, we don't have this node's
+		// announcement.
+		if nodeInfo.Node == nil {
+			return ErrNoNodeInfo
+		}
+
+		featureVec := lndwire.NewRawFeatureVector(nodeInfo.Features...)
+		for _, feature := range features {
+			// We don't need to check our optional features.
+			if !feature.IsRequired() {
+				continue
+			}
+
+			if !featureVec.IsSet(feature) {
+				return fmt.Errorf("%w: %v required not not set",
+					ErrFeatureMismatch, feature)
+			}
+		}
+
+		return nil
+	}
+}
