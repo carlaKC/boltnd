@@ -5,8 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightninglabs/lndclient"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
@@ -278,6 +280,77 @@ func TestCreateRelayCheck(t *testing.T) {
 			canRelay := createRelayCheck(testCase.features)
 			err := canRelay(testCase.nodeInfo)
 			require.True(t, errors.Is(err, testCase.err))
+		})
+	}
+}
+
+// TestBuildBlindedRoute tests construction of a blinded route to our node.
+func TestBuildBlindedRoute(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 3)
+	introPayload := &lnwire.BlindedRouteData{
+		NextNodeID: pubkeys[0],
+	}
+
+	introData, err := lnwire.EncodeBlindedRouteData(introPayload)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		relayingPeers []*lndclient.NodeInfo
+		route         []*sphinx.BlindedPathHop
+		err           error
+	}{
+		{
+			name: "no relaying peers",
+			err:  ErrNoRelayingPeers,
+		},
+		{
+			name: "route with most channels peer",
+			relayingPeers: []*lndclient.NodeInfo{
+				{
+					Channels: []lndclient.ChannelEdge{
+						{}, {},
+					},
+					Node: &lndclient.Node{
+						PubKey: route.NewVertex(
+							pubkeys[1],
+						),
+					},
+				},
+				{
+					Channels: []lndclient.ChannelEdge{
+						{}, {}, {},
+					},
+					Node: &lndclient.Node{
+						PubKey: route.NewVertex(
+							pubkeys[2],
+						),
+					},
+				},
+			},
+			route: []*sphinx.BlindedPathHop{
+				{
+					NodePub: pubkeys[2],
+					Payload: introData,
+				},
+				{
+					NodePub: pubkeys[0],
+					Payload: nil,
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			route, err := buildBlindedRoute(
+				testCase.relayingPeers, pubkeys[0],
+			)
+
+			require.True(t, errors.Is(err, testCase.err))
+			require.Equal(t, route, testCase.route)
 		})
 	}
 }

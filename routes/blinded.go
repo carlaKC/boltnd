@@ -6,7 +6,9 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,6 +31,10 @@ var (
 	// ErrFeatureMismatch is returned when a peer doesn't have the feautres
 	// we need for onion relay.
 	ErrFeatureMismatch = errors.New("insufficient node features")
+
+	// ErrNoRelayingPeers is returned when we have no peers that are
+	// eligible for inclusion in a route with the feature set we require.
+	ErrNoRelayingPeers = errors.New("no relaying peers")
 )
 
 // BlindedRouteGenerator produces blinded routes.
@@ -48,6 +54,55 @@ func NewBlindedRouteGenerator(lnd Lnd,
 		lnd:    lnd,
 		pubkey: pubkey,
 	}
+}
+
+// buildBlindedRoute produces a blinded route from a set of peers that can relay
+// onion messages to our node.
+//
+// TODO - this has terrible privacy, fill in more nodes (or dummies) between
+// us and the intro node.
+func buildBlindedRoute(relayingPeers []*lndclient.NodeInfo,
+	ourPubkey *btcec.PublicKey) ([]*sphinx.BlindedPathHop, error) {
+
+	if len(relayingPeers) == 0 {
+		return nil, ErrNoRelayingPeers
+	}
+
+	var mostPeers *lndclient.NodeInfo
+	for _, peer := range relayingPeers {
+		if mostPeers == nil {
+			mostPeers = peer
+		}
+
+		if len(peer.Channels) > len(mostPeers.Channels) {
+			mostPeers = peer
+		}
+	}
+
+	introNode, err := btcec.ParsePubKey(mostPeers.PubKey[:])
+	if err != nil {
+		return nil, fmt.Errorf("intro pubkey: %w", err)
+	}
+
+	introPayload := &lnwire.BlindedRouteData{
+		NextNodeID: ourPubkey,
+	}
+
+	introPayloadBytes, err := lnwire.EncodeBlindedRouteData(introPayload)
+	if err != nil {
+		return nil, fmt.Errorf("intro payload: %w", err)
+	}
+
+	return []*sphinx.BlindedPathHop{
+		{
+			NodePub: introNode,
+			Payload: introPayloadBytes,
+		},
+		{
+			NodePub: ourPubkey,
+			Payload: nil,
+		},
+	}, nil
 }
 
 // canRelayFunc is the function signature of closures used to check whether a
