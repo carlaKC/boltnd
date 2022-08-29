@@ -105,7 +105,8 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 	)
 
 	s.offerCoordinator = offers.NewCoordinator(
-		lnd.Router, s.onionMsgr, routeGenerator, s.requestShutdown,
+		*s.lnd.ChainParams, lnd.Router, s.onionMsgr, routeGenerator,
+		s.requestShutdown,
 	)
 
 	if err := s.offerCoordinator.Start(); err != nil {

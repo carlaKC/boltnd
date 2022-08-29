@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/testutils"
@@ -37,8 +38,8 @@ func newOfferCoordinatorTest(t *testing.T) *offerCoordinatorTest {
 	}
 
 	testHelper.coordinator = NewCoordinator(
-		testHelper.lnd, testHelper, testHelper.routeGenerator,
-		testHelper.gracefulShutdown,
+		chaincfg.RegressionNetParams, testHelper.lnd, testHelper,
+		testHelper.routeGenerator, testHelper.gracefulShutdown,
 	)
 
 	return testHelper

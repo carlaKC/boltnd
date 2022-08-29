@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/routes"
@@ -88,6 +89,9 @@ type Coordinator struct {
 	// lnd provides the lnd apis required for offers.
 	lnd LNDOffers
 
+	// params are the parameters of our current chain.
+	params chaincfg.Params
+
 	// onionMessenger provides the external onion messaging functionality
 	// required for offers.
 	onionMessenger onionmsg.OnionMessenger
@@ -118,12 +122,13 @@ type Coordinator struct {
 }
 
 // NewCoordinator creates a new offer coordinator.
-func NewCoordinator(lnd LNDOffers, onionMsgr onionmsg.OnionMessenger,
-	routeGenerator routes.Generator,
+func NewCoordinator(params chaincfg.Params, lnd LNDOffers,
+	onionMsgr onionmsg.OnionMessenger, routeGenerator routes.Generator,
 	requestShutdown func(err error)) *Coordinator {
 
 	return &Coordinator{
 		lnd:              lnd,
+		params:           params,
 		onionMessenger:   onionMsgr,
 		routeGenerator:   routeGenerator,
 		outboundOffers:   make(map[lntypes.Hash]*activeOfferState),
