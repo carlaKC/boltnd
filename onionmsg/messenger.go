@@ -72,6 +72,10 @@ var (
 	// do not get a node pubkey alongside a channel.
 	ErrNilPubkeyInRoute = errors.New("nil pubkey in route")
 
+	// ErrNoForwardingOnion is returned when we try to forward an onion
+	// message but no next onion is provided.
+	ErrNoForwardingOnion = errors.New("no next onion provided to forward")
+
 	// ErrShuttingDown is returned when the messenger exits.
 	ErrShuttingDown = errors.New("messenger shutting down")
 
@@ -761,6 +765,10 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 			return fmt.Errorf("%w: %v unexpected final hop "+
 				"payloads", ErrFinalPayload,
 				len(payload.FinalHopPayloads))
+		}
+
+		if processedPacket.NextPacket == nil {
+			return ErrNoForwardingOnion
 		}
 
 		return ErrNoForwarding

@@ -468,6 +468,26 @@ func TestHandleOnionMessage(t *testing.T) {
 			expectedErr: nil,
 		},
 		{
+			name: "message for forwarding - no next onion",
+			msg:  *msg,
+			// Return a packet indicating that there are more hops,
+			// but it does not have a next onion packet to forward.
+			processOnion: func(_ *sphinx.OnionPacket,
+				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
+				error) {
+
+				return &sphinx.ProcessedPacket{
+					Action: sphinx.MoreHops,
+				}, nil
+			},
+			// Return a payload with no extra data for the final
+			// hop.
+			setupMock: func(m *mock.Mock) {
+				mockPayloadDecode(m, payloadNoFinalHops, nil)
+			},
+			expectedErr: ErrNoForwardingOnion,
+		},
+		{
 			name: "message for forwarding",
 			msg:  *msg,
 			// Return a packet indicating that there are more hops.
@@ -476,7 +496,8 @@ func TestHandleOnionMessage(t *testing.T) {
 				error) {
 
 				return &sphinx.ProcessedPacket{
-					Action: sphinx.MoreHops,
+					Action:     sphinx.MoreHops,
+					NextPacket: &sphinx.OnionPacket{},
 				}, nil
 			},
 			// Return a payload with no extra data for the final
