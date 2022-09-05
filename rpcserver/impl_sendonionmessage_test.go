@@ -40,7 +40,8 @@ func TestRPCSendOnionMessage(t *testing.T) {
 		{
 			name: "invalid pubkey",
 			request: &offersrpc.SendOnionMessageRequest{
-				Pubkey: []byte{1, 2, 3},
+				Pubkey:        []byte{1, 2, 3},
+				DirectConnect: true,
 			},
 			success: false,
 			errCode: codes.InvalidArgument,
@@ -55,7 +56,8 @@ func TestRPCSendOnionMessage(t *testing.T) {
 				)
 			},
 			request: &offersrpc.SendOnionMessageRequest{
-				Pubkey: pubkeyBytes,
+				Pubkey:        pubkeyBytes,
+				DirectConnect: true,
 			},
 			success: false,
 			errCode: codes.Internal,
@@ -64,10 +66,11 @@ func TestRPCSendOnionMessage(t *testing.T) {
 			name: "send message succeeds",
 			// Setup our mock to successfully send the message.
 			setupMock: func(m *mock.Mock) {
-				mockSendMessage(m, vertex, nil, nil, true, nil)
+				mockSendMessage(m, vertex, nil, nil, false, nil)
 			},
 			request: &offersrpc.SendOnionMessageRequest{
-				Pubkey: pubkeyBytes,
+				Pubkey:        pubkeyBytes,
+				DirectConnect: false,
 			},
 			success: true,
 		},
@@ -88,6 +91,7 @@ func TestRPCSendOnionMessage(t *testing.T) {
 				FinalPayloads: map[uint64][]byte{
 					uint64(finalPayload.TLVType): finalPayload.Value,
 				},
+				DirectConnect: true,
 			},
 			success: true,
 		},
@@ -103,6 +107,7 @@ func TestRPCSendOnionMessage(t *testing.T) {
 				FinalPayloads: map[uint64][]byte{
 					2: []byte{1, 2},
 				},
+				DirectConnect: true,
 			},
 			success: false,
 			errCode: codes.InvalidArgument,

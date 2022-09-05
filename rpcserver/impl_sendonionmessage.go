@@ -2,9 +2,11 @@ package rpcserver
 
 import (
 	"context"
+	"errors"
 
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tlv"
 	"google.golang.org/grpc/codes"
@@ -27,14 +29,28 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 		return nil, err
 	}
 
-	err = s.onionMsgr.SendMessage(ctx, pubkey, replyPath, finalHop, true)
-	if err != nil {
+	err = s.onionMsgr.SendMessage(
+		ctx, pubkey, replyPath, finalHop, req.DirectConnect,
+	)
+	switch {
+	// If we got a no path error, prompt user to try direct connect if
+	// they want to.
+	case errors.Is(err, onionmsg.ErrNoPath):
+		return nil, status.Errorf(
+			codes.NotFound, "could not find path to: %v, try "+
+				"using direct connect to deliver to peer "+
+				"(! exposes IP to recipient !)", pubkey,
+		)
+
+	// Otherwise fail generically.
+	case err != nil:
 		return nil, status.Errorf(
 			codes.Internal, "send message failed: %v", err,
 		)
-	}
 
-	return &offersrpc.SendOnionMessageResponse{}, nil
+	default:
+		return &offersrpc.SendOnionMessageResponse{}, nil
+	}
 }
 
 // parseSendOnionMessageRequest parses and validates the parameters provided

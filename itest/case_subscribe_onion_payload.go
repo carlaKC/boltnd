@@ -128,6 +128,7 @@ func SubscribeOnionPayload(t *testing.T, net *lntest.NetworkHarness) {
 		FinalPayloads: map[uint64][]byte{
 			103: []byte{1, 2, 3},
 		},
+		DirectConnect: true,
 	}
 
 	_, err = offersTest.aliceOffers.SendOnionMessage(ctxt, req)

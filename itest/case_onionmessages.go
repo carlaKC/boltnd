@@ -48,7 +48,8 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	// to ensure that sending does not hang.
 	ctxt, cancel := context.WithTimeout(ctxb, defaultTimeout)
 	req := &offersrpc.SendOnionMessageRequest{
-		Pubkey: net.Bob.PubKey[:],
+		Pubkey:        net.Bob.PubKey[:],
+		DirectConnect: true,
 	}
 	_, err = offersTest.aliceOffers.SendOnionMessage(ctxt, req)
 	require.NoError(t, err, "send onion message")
@@ -172,6 +173,7 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 				},
 			},
 		},
+		DirectConnect: true,
 	}
 	_, err = carolB12.SendOnionMessage(ctxt, req)
 	require.NoError(t, err, "carol message")
