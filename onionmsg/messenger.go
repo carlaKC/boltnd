@@ -127,6 +127,9 @@ type Messenger struct {
 	// router provides onion routing capabilities for the messenger.
 	router *sphinx.Router
 
+	// nodeKeyECDH provides ecdh operations with our node key.
+	nodeKeyECDH sphinx.SingleKeyECDH
+
 	// lookupPeerBackoff is the amount of time that we back off for when
 	// waiting to connect to a peer.
 	lookupPeerBackoff time.Duration
@@ -161,6 +164,7 @@ func NewOnionMessenger(params *chaincfg.Params, lnd LndOnionMsg,
 		router: sphinx.NewRouter(
 			nodeKeyECDH, params, sphinx.NewMemoryReplayLog(),
 		),
+		nodeKeyECDH:         nodeKeyECDH,
 		lookupPeerBackoff:   lookupPeerBackoffDefault,
 		lookupPeerAttempts:  lookupPeerAttemptsDefault,
 		onionMsgHandlers:    make(map[tlv.Type]OnionMessageHandler),
