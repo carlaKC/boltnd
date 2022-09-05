@@ -49,11 +49,6 @@ var (
 	// an onion message.
 	ErrNoPath = errors.New("path not found to peer")
 
-	// ErrNoForwarding is returned if we receive an onion message intended
-	// to be forwarded, but do not support forwarding.
-	ErrNoForwarding = errors.New("received onion message for forwarding, " +
-		"not supported")
-
 	// ErrFinalPayload is returned if an intermediate hop in an onion
 	// message chain contains fields that are reserved for the last hop.
 	ErrFinalPayload = errors.New("intermediate hop has final hop payloads")
@@ -75,6 +70,10 @@ var (
 	// ErrNoForwardingOnion is returned when we try to forward an onion
 	// message but no next onion is provided.
 	ErrNoForwardingOnion = errors.New("no next onion provided to forward")
+
+	// ErrNoNextNodeID is returned when we require a next node id in our
+	// encrypted data blob and one was not provided.
+	ErrNoNextNodeID = errors.New("next node ID required")
 
 	// ErrShuttingDown is returned when the messenger exits.
 	ErrShuttingDown = errors.New("messenger shutting down")
@@ -568,15 +567,7 @@ func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 					decryptDataBlob: decryptBlobFunc(
 						m.nodeKeyECDH,
 					),
-					// Return a failure if we try to
-					// forward messages.
-					forwardMessage: func(
-						*lnwire.BlindedRouteData,
-						*btcec.PublicKey,
-						*sphinx.OnionPacket) error {
-
-						return ErrNoForwarding
-					},
+					forwardMessage: m.forwardMessage,
 				},
 			)
 			if err == nil {
@@ -595,13 +586,6 @@ func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 			// Handle the non-nil error accordingly, we've already
 			// managed the nil case above.
 			switch upwrappedErr {
-			// Log that we're dropping the message if it's supposed
-			// to be forwarded (not supported at present).
-			case ErrNoForwarding:
-				log.Infof("Received onion message with more "+
-					"hops from: %v forwarding not "+
-					"supported, dropping message", msg.Peer)
-
 			// Don't error out on invalid messages (it allows peers
 			// to send us junk to shut us down), just log.
 			// TODO: possibly penalize bad messages in future?
@@ -667,6 +651,47 @@ func (m *Messenger) processOnion(onionPkt *sphinx.OnionPacket,
 	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error) {
 
 	return m.router.ProcessOnionPacket(onionPkt, nil, 0, blindingPoint)
+}
+
+// forwardMessage forwards an onion packet to the next node provided.
+func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
+	blindingPoint *btcec.PublicKey, onionPacket *sphinx.OnionPacket) error {
+
+	if data.NextNodeID == nil {
+		return ErrNoNextNodeID
+	}
+
+	nextBlinding, err := sphinx.NextEphemeral(m.nodeKeyECDH, blindingPoint)
+	if err != nil {
+		return fmt.Errorf("could not calculate next ephemeral: %w", err)
+	}
+
+	buf := new(bytes.Buffer)
+	if err := onionPacket.Encode(buf); err != nil {
+		return fmt.Errorf("could not encode packet: %w", err)
+	}
+
+	onionMsg := lnwire.NewOnionMessage(nextBlinding, buf.Bytes())
+	buf = new(bytes.Buffer)
+	if err := onionMsg.Encode(buf, 0); err != nil {
+		return fmt.Errorf("could not encode onion message: %w", err)
+	}
+
+	customMsg := lndclient.CustomMessage{
+		Peer:    route.NewVertex(data.NextNodeID),
+		MsgType: lnwire.OnionMessageType,
+		Data:    buf.Bytes(),
+	}
+
+	log.Infof("Forwarding onion message to: %x, next blinding: %x",
+		customMsg.Peer, nextBlinding.SerializeCompressed())
+
+	err = m.lnd.SendCustomMessage(context.Background(), customMsg)
+	if err != nil {
+		return fmt.Errorf("could not send message: %w", err)
+	}
+
+	return nil
 }
 
 // onionMessageKit contains the dependencies required to process onion messages.
