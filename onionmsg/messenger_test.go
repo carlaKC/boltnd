@@ -442,9 +442,10 @@ func TestHandleOnionMessage(t *testing.T) {
 	tests := []struct {
 		name         string
 		msg          lndclient.CustomMessage
-		processOnion processOnion
-		setupMock    func(*mock.Mock)
-		expectedErr  error
+		processOnion func(*sphinx.OnionPacket, *btcec.PublicKey) (
+			*sphinx.ProcessedPacket, error)
+		setupMock   func(*mock.Mock)
+		expectedErr error
 	}{
 		// TODO: add coverage for decoding errors
 		{
@@ -624,10 +625,13 @@ func TestHandleOnionMessage(t *testing.T) {
 				finalHopPayload.TLVType: mock.OnionMessageHandler,
 			}
 
-			err := handleOnionMessage(
-				testCase.processOnion, mock.DecodePayload,
-				testCase.msg, handlers,
-			)
+			kit := &onionMessageKit{
+				processOnion:  testCase.processOnion,
+				decodePayload: mock.DecodePayload,
+				handlers:      handlers,
+			}
+
+			err := handleOnionMessage(testCase.msg, kit)
 			require.True(t, errors.Is(err, testCase.expectedErr))
 		})
 	}

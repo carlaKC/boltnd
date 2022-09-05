@@ -553,8 +553,11 @@ func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 			// since we don't want one malformed message to send
 			// us down.
 			err := handleOnionMessage(
-				m.processOnion, lnwire.DecodeOnionMessagePayload,
-				msg, m.onionMsgHandlers,
+				msg, &onionMessageKit{
+					processOnion:  m.processOnion,
+					decodePayload: lnwire.DecodeOnionMessagePayload,
+					handlers:      m.onionMsgHandlers,
+				},
 			)
 			if err == nil {
 				continue
@@ -646,19 +649,28 @@ func (m *Messenger) processOnion(onionPkt *sphinx.OnionPacket,
 	return m.router.ProcessOnionPacket(onionPkt, nil, 0, blindingPoint)
 }
 
-// processOnion is the function signature used to process onion packets.
-type processOnion func(onionPkt *sphinx.OnionPacket,
-	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error)
+// onionMessageKit contains the dependencies required to process onion messages.
+type onionMessageKit struct {
+	// processOnion provides the ability to process incoming onion messages.
+	processOnion func(*sphinx.OnionPacket, *btcec.PublicKey) (
+		*sphinx.ProcessedPacket, error)
 
-// decodeOnionPayload is the function signature used to process onion packets
-// hop payload.
-type decodeOnionPayload func(o []byte) (*lnwire.OnionMessagePayload, error)
+	// decodePayload provides the ability to process onion messages
+	// payloads.
+	decodePayload func([]byte) (*lnwire.OnionMessagePayload, error)
+
+	// handlers is a set of handler functions for onion messages that are
+	// addressed to our node. It registers one handler per final hop payload
+	// tlv namespace that will be executed when we receive an onion message
+	// with that payload polulated.
+	handlers map[tlv.Type]OnionMessageHandler
+}
 
 // handleOnionMessage extracts onion messages from custom messages received from
-// lnd. A process onion and decode onion closure are passed in for easy testing.
-func handleOnionMessage(processOnion processOnion,
-	decodePayload decodeOnionPayload, msg lndclient.CustomMessage,
-	handlers map[tlv.Type]OnionMessageHandler) error {
+// lnd. An onion message kit containing the processing functions and handlers
+// required is passed in to facilitate easy unit testing.
+func handleOnionMessage(msg lndclient.CustomMessage,
+	kit *onionMessageKit) error {
 
 	log.Infof("Received onion message from peer: %v", msg.Peer)
 
@@ -675,7 +687,9 @@ func handleOnionMessage(processOnion processOnion,
 		return fmt.Errorf("%w:%v", ErrBadOnionBlob, err)
 	}
 
-	processedPacket, err := processOnion(onionPkt, onionMsg.BlindingPoint)
+	processedPacket, err := kit.processOnion(
+		onionPkt, onionMsg.BlindingPoint,
+	)
 	if err != nil {
 		return fmt.Errorf("%w: could not process onion packet: %v",
 			ErrBadOnionBlob, err)
@@ -683,7 +697,7 @@ func handleOnionMessage(processOnion processOnion,
 
 	// Decode the TLV stream in our payload.
 	payloadBytes := processedPacket.Payload.Payload
-	payload, err := decodePayload(payloadBytes)
+	payload, err := kit.decodePayload(payloadBytes)
 	if err != nil {
 		return fmt.Errorf("%w: could not process payload: %v",
 			ErrBadOnionBlob, err)
@@ -697,7 +711,7 @@ func handleOnionMessage(processOnion processOnion,
 
 		// If we have no handlers registered, then we can't do anything
 		// else with this message.
-		if handlers == nil {
+		if kit.handlers == nil {
 			log.Info("No handlers registered, skipping %v final "+
 				"hop payloads", len(payload.FinalHopPayloads))
 
@@ -707,7 +721,7 @@ func handleOnionMessage(processOnion processOnion,
 		// For each of our final hop payloads, identify a handling
 		// function (if any) and handoff the payload.
 		for _, extraData := range payload.FinalHopPayloads {
-			handler, ok := handlers[extraData.TLVType]
+			handler, ok := kit.handlers[extraData.TLVType]
 			if !ok {
 				log.Debugf("Final tlv: %v / %x unhandled",
 					extraData.TLVType, extraData.Value)
