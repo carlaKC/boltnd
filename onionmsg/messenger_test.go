@@ -375,6 +375,26 @@ func mockDecryptBlob(m *mock.Mock, blindingPoint *btcec.PublicKey,
 	)
 }
 
+// ForwardMessage mocks forwarding a message to the next node.
+func (h *handleOnionMesageMock) ForwardMessage(data *lnwire.BlindedRouteData,
+	blinding *btcec.PublicKey, packet *sphinx.OnionPacket) error {
+
+	args := h.Mock.MethodCalled("forwardMessage", data, blinding, packet)
+
+	return args.Error(0)
+}
+
+// mockForwardMessage primes the mock for a call to forward message.
+func mockForwardMessage(m *mock.Mock, data *lnwire.BlindedRouteData,
+	blinding *btcec.PublicKey, packet *sphinx.OnionPacket, err error) {
+
+	m.On(
+		"forwardMessage", data, blinding, packet,
+	).Once().Return(
+		err,
+	)
+}
+
 // OnionMessageHandler mocks a call to handle an onion message.
 func (h *handleOnionMesageMock) OnionMessageHandler(path *lnwire.ReplyPath,
 	encrypted []byte, payload []byte) error {
@@ -530,12 +550,20 @@ func TestHandleOnionMessage(t *testing.T) {
 					NextNodeID: pubkeys[0],
 				}
 
+				blinding := privKeys[1].PubKey()
+
 				mockDecryptBlob(
-					m, privKeys[1].PubKey(),
+					m, blinding,
 					payloadNoFinalHops, data, nil,
 				)
+
+				// Fail our message forward.
+				mockForwardMessage(
+					m, data, blinding,
+					&sphinx.OnionPacket{}, mockErr,
+				)
 			},
-			expectedErr: ErrNoForwarding,
+			expectedErr: mockErr,
 		},
 		{
 			name: "message for forwarding with final payload",
@@ -680,6 +708,7 @@ func TestHandleOnionMessage(t *testing.T) {
 				processOnion:    testCase.processOnion,
 				decodePayload:   mock.DecodePayload,
 				decryptDataBlob: mock.DecryptBlob,
+				forwardMessage:  mock.ForwardMessage,
 				handlers:        handlers,
 			}
 

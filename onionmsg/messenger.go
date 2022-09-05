@@ -568,6 +568,15 @@ func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 					decryptDataBlob: decryptBlobFunc(
 						m.nodeKeyECDH,
 					),
+					// Return a failure if we try to
+					// forward messages.
+					forwardMessage: func(
+						*lnwire.BlindedRouteData,
+						*btcec.PublicKey,
+						*sphinx.OnionPacket) error {
+
+						return ErrNoForwarding
+					},
 				},
 			)
 			if err == nil {
@@ -681,6 +690,12 @@ type onionMessageKit struct {
 	// tlv namespace that will be executed when we receive an onion message
 	// with that payload polulated.
 	handlers map[tlv.Type]OnionMessageHandler
+
+	// forwardMessage forwards an onion message to the next peer in the
+	// route.
+	forwardMessage func(data *lnwire.BlindedRouteData,
+		blindingPoint *btcec.PublicKey,
+		nextPacket *sphinx.OnionPacket) error
 }
 
 // handleOnionMessage extracts onion messages from custom messages received from
@@ -780,7 +795,7 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 			return ErrNoForwardingOnion
 		}
 
-		_, err := kit.decryptDataBlob(
+		data, err := kit.decryptDataBlob(
 			onionMsg.BlindingPoint, payload,
 		)
 		if err != nil {
@@ -788,7 +803,10 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 				err)
 		}
 
-		return ErrNoForwarding
+		return kit.forwardMessage(
+			data, onionMsg.BlindingPoint,
+			processedPacket.NextPacket,
+		)
 
 	// If we encounter a sphinx failure, just log the error and ignore the
 	// packet.
