@@ -330,13 +330,11 @@ func mockMessageHandled(m *mock.Mock, path *lnwire.ReplyPath, data,
 // TestHandleOnionMessage tests different handling cases for onion messages.
 func TestHandleOnionMessage(t *testing.T) {
 	pubkeys := testutils.GetPubkeys(t, 3)
-	nodeKey, err := route.NewVertexFromBytes(
-		pubkeys[0].SerializeCompressed(),
-	)
-	require.NoError(t, err, "pubkey")
+	nodeKey := route.NewVertex(pubkeys[0])
 
+	privKeys := testutils.GetPrivkeys(t, 1)
 	// Create a single valid message that we can use across test cases.
-	msg, err := customOnionMessage(nodeKey, nil, nil)
+	msg, err := customOnionMessage(privKeys[0], nodeKey, nil, nil)
 	require.NoError(t, err, "create msg")
 
 	mockErr := errors.New("mock err")
@@ -608,7 +606,7 @@ func sendErr(t *testing.T, errChan chan<- error, err error) {
 
 // TestReceiveOnionMessages tests the messenger's receive loop for messages.
 func TestReceiveOnionMessages(t *testing.T) {
-	privkeys := testutils.GetPrivkeys(t, 1)
+	privkeys := testutils.GetPrivkeys(t, 2)
 
 	// Create an onion message that is *to our node* that we can use
 	// across tests.
@@ -618,7 +616,7 @@ func TestReceiveOnionMessages(t *testing.T) {
 	)
 	require.NoError(t, err, "node pubkey")
 
-	msg, err := customOnionMessage(nodeVertex, nil, nil)
+	msg, err := customOnionMessage(privkeys[1], nodeVertex, nil, nil)
 	require.NoError(t, err, "custom message")
 
 	mockErr := errors.New("mock")
