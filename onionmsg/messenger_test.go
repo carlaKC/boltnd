@@ -332,9 +332,12 @@ func TestHandleOnionMessage(t *testing.T) {
 	pubkeys := testutils.GetPubkeys(t, 3)
 	nodeKey := route.NewVertex(pubkeys[0])
 
-	privKeys := testutils.GetPrivkeys(t, 1)
+	privKeys := testutils.GetPrivkeys(t, 2)
+
 	// Create a single valid message that we can use across test cases.
-	msg, err := customOnionMessage(privKeys[0], nodeKey, nil, nil)
+	msg, err := customOnionMessage(
+		privKeys[0], privKeys[1], nodeKey, nil, nil,
+	)
 	require.NoError(t, err, "create msg")
 
 	mockErr := errors.New("mock err")
@@ -616,7 +619,9 @@ func TestReceiveOnionMessages(t *testing.T) {
 	)
 	require.NoError(t, err, "node pubkey")
 
-	msg, err := customOnionMessage(privkeys[1], nodeVertex, nil, nil)
+	msg, err := customOnionMessage(
+		privkeys[0], privkeys[1], nodeVertex, nil, nil,
+	)
 	require.NoError(t, err, "custom message")
 
 	mockErr := errors.New("mock")

@@ -288,8 +288,13 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 		return fmt.Errorf("could not get session key: %w", err)
 	}
 
+	blindingKey, err := btcec.NewPrivateKey()
+	if err != nil {
+		return fmt.Errorf("could not get blinding key: %w", err)
+	}
+
 	msg, err := customOnionMessage(
-		sessionKey, peer, replyPath, finalHopPayloads,
+		sessionKey, blindingKey, peer, replyPath, finalHopPayloads,
 	)
 	if err != nil {
 		return fmt.Errorf("could not create message: %w", err)
@@ -381,8 +386,8 @@ func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
 
 // customOnionMessage creates an onion message to our peer and wraps it in
 // a custom lnd message.
-func customOnionMessage(sessionKey *btcec.PrivateKey, peer route.Vertex,
-	replyPath *lnwire.ReplyPath,
+func customOnionMessage(sessionKey, blindingKey *btcec.PrivateKey,
+	peer route.Vertex, replyPath *lnwire.ReplyPath,
 	finalPayloads []*lnwire.FinalHopPayload) (*lndclient.CustomMessage,
 	error) {
 
@@ -397,7 +402,7 @@ func customOnionMessage(sessionKey *btcec.PrivateKey, peer route.Vertex,
 
 	// Create and encode an onion message.
 	msg, err := createOnionMessage(
-		path, replyPath, finalPayloads, sessionKey,
+		path, replyPath, finalPayloads, sessionKey, blindingKey,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("onion message creation failed: %v", err)
