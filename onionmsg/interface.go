@@ -35,6 +35,10 @@ type LndOnionMsg interface {
 
 	// GetInfo returns information about the lnd node.
 	GetInfo(ctx context.Context) (*lndclient.Info, error)
+
+	// QueryRoutes queries lnd for a route to a destination peer.
+	QueryRoutes(ctx context.Context, req lndclient.QueryRoutesRequest) (
+		*lndclient.QueryRoutesResponse, error)
 }
 
 // LndOnionSigner is an interface describing the lnd dependencies required for
