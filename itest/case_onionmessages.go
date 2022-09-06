@@ -183,4 +183,15 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	receiveMessage()
 	readMessage()
 
+	// Now that Alice has a channel open with Bob, she should be able to
+	// send an onion message to him without using "direct connect".
+	req.DirectConnect = false
+
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	_, err = offersTest.aliceOffers.SendOnionMessage(ctxt, req)
+	require.NoError(t, err, "alice -> bob no direct connect")
+	cancel()
+
+	receiveMessage()
+	readMessage()
 }
