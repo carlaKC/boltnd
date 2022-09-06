@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,5 +86,42 @@ func readOnionMessage(msgChan chan *offersrpc.SubscribeOnionPayloadResponse,
 		case <-time.After(defaultTimeout):
 			return nil, errors.New("message read timeout")
 		}
+	}
+}
+
+// openChannelAndAnnounce opens a channel from initiator -> receiver, fully
+// confirming it and waiting until the initiator, recipient and optional set of
+// nodes in the network slice have seen the channel announcement.
+func openChannelAndAnnounce(t *testing.T, net *lntest.NetworkHarness,
+	initiator, receiver *lntest.HarnessNode,
+	network ...*lntest.HarnessNode) {
+
+	chanReq := lntest.OpenChannelParams{
+		Amt: 500_0000,
+	}
+
+	chanUpdates, err := net.OpenChannel(initiator, receiver, chanReq)
+	require.NoError(t, err, "open channel")
+
+	// Mine 6 blocks so that our channel will confirm.
+	_, err = net.Miner.Client.Generate(6)
+	require.NoError(t, err, "mine blocks")
+
+	channelID, err := net.WaitForChannelOpen(chanUpdates)
+	require.NoError(t, err, "chan open")
+
+	// Wait for all nodes to see the channel between Alice and Bob.
+	require.NoError(
+		t, initiator.WaitForNetworkChannelOpen(channelID), "initiator",
+	)
+	require.NoError(
+		t, receiver.WaitForNetworkChannelOpen(channelID), "receiver",
+	)
+
+	for _, node := range network {
+		require.NoError(
+			t, node.WaitForNetworkChannelOpen(channelID),
+			"listener: %v", node.Name(),
+		)
 	}
 }
