@@ -20,6 +20,7 @@ type serverTest struct {
 	server    *Server
 	lnd       *testutils.MockLND
 	offerMock *offersMock
+	routeMock *testutils.MockRouteGenerator
 }
 
 func newServerTest(t *testing.T) *serverTest {
@@ -27,6 +28,7 @@ func newServerTest(t *testing.T) *serverTest {
 		t:         t,
 		lnd:       testutils.NewMockLnd(),
 		offerMock: newOffersMock(),
+		routeMock: testutils.NewMockRouteGenerator(),
 	}
 
 	var err error
@@ -35,6 +37,8 @@ func newServerTest(t *testing.T) *serverTest {
 
 	// Override our onion messenger with a mock.
 	serverTest.server.onionMsgr = serverTest.offerMock
+
+	serverTest.server.routeGenerator = serverTest.routeMock
 
 	return serverTest
 }
@@ -53,6 +57,7 @@ func (s *serverTest) start() {
 func (s *serverTest) stop() {
 	s.lnd.Mock.AssertExpectations(s.t)
 	s.offerMock.Mock.AssertExpectations(s.t)
+	s.routeMock.Mock.AssertExpectations(s.t)
 }
 
 // offersMock houses a mock for all the external interfaces that the rpcserver

@@ -8,6 +8,7 @@ import (
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/onionmsg"
+	"github.com/carlakc/boltnd/routes"
 	"github.com/lightninglabs/lndclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -37,6 +38,9 @@ type Server struct {
 	// As with the lnd instance above, the messenger is only created once
 	// Start() has been called.
 	onionMsgr onionmsg.OnionMessenger
+
+	// routeGenerator produces blinded paths to our node.
+	routeGenerator routes.Generator
 
 	// ready is closed once the server is fully set up and ready to operate.
 	// This is required because we only receive our lnd dependency on
@@ -78,6 +82,10 @@ func (s *Server) Start(lnd *lndclient.LndServices) error {
 	if err != nil {
 		return fmt.Errorf("could not create router signer: %w", err)
 	}
+
+	s.routeGenerator = routes.NewBlindedRouteGenerator(
+		lnd.Client, nodeKeyECDH.PubKey(),
+	)
 
 	// Finally setup an onion messenger using the onion router.
 	s.onionMsgr = onionmsg.NewOnionMessenger(
