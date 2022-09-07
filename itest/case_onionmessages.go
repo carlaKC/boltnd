@@ -169,7 +169,7 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 			Hops: []*offersrpc.BlindedHop{
 				{
 					BlindedNodeId: pubkey2,
-					EncrypedData:  []byte{3, 2, 1},
+					EncryptedData: []byte{3, 2, 1},
 				},
 			},
 		},

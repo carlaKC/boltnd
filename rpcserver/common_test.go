@@ -46,7 +46,7 @@ func TestParseReplyPath(t *testing.T) {
 				Hops: []*offersrpc.BlindedHop{
 					{
 						// No node ID for hop.
-						EncrypedData: []byte{1, 2, 3},
+						EncryptedData: []byte{1, 2, 3},
 					},
 				},
 			},
@@ -60,7 +60,7 @@ func TestParseReplyPath(t *testing.T) {
 				Hops: []*offersrpc.BlindedHop{
 					{
 						BlindedNodeId: pubkey2,
-						EncrypedData:  []byte{3, 2, 1},
+						EncryptedData: []byte{3, 2, 1},
 					},
 				},
 			},

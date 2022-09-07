@@ -49,7 +49,7 @@ func parseReplyPath(req *offersrpc.BlindedPath) (*lnwire.ReplyPath, error) {
 
 		replyPath.Hops[i] = &lnwire.BlindedHop{
 			BlindedNodeID: pubkey,
-			EncryptedData: hop.EncrypedData,
+			EncryptedData: hop.EncryptedData,
 		}
 	}
 
@@ -71,7 +71,7 @@ func composeReplyPath(resp *lnwire.ReplyPath) *offersrpc.BlindedPath {
 	for i, hop := range resp.Hops {
 		blindedPath.Hops[i] = &offersrpc.BlindedHop{
 			BlindedNodeId: hop.BlindedNodeID.SerializeCompressed(),
-			EncrypedData:  hop.EncryptedData,
+			EncryptedData: hop.EncryptedData,
 		}
 	}
 

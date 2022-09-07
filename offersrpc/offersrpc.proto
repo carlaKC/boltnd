@@ -61,7 +61,7 @@ message BlindedHop {
     bytes blinded_node_id = 1;
 
     // The encrypted data blob for the hop.
-    bytes encryped_data = 2;
+    bytes encrypted_data = 2;
 }
 
 message SendOnionMessageResponse {
