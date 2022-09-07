@@ -24,6 +24,10 @@ type sendMessageTest struct {
 	// peer is the peer to send our message to.
 	peer route.Vertex
 
+	// directConnect indicates whether we should connect to the peer to
+	// send the message.
+	directConnect bool
+
 	// peerLookups is the number of times that we lookup our peer after
 	// connecting.
 	peerLookups int
@@ -38,12 +42,11 @@ type sendMessageTest struct {
 // TestSendMessage tests sending of onion messages using lnd's custom message
 // api.
 func TestSendMessage(t *testing.T) {
-	pubkeys := testutils.GetPubkeys(t, 1)
+	pubkeys := testutils.GetPubkeys(t, 3)
 
-	pubkey, err := route.NewVertexFromBytes(
-		pubkeys[0].SerializeCompressed(),
-	)
-	require.NoError(t, err, "pubkey")
+	pubkey := route.NewVertex(pubkeys[0])
+	node1 := route.NewVertex(pubkeys[1])
+	node2 := route.NewVertex(pubkeys[2])
 
 	var (
 		peerList = []lndclient.Peer{
@@ -72,10 +75,11 @@ func TestSendMessage(t *testing.T) {
 
 	tests := []sendMessageTest{
 		{
-			name:        "success - peer already connected",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: nil,
+			name:          "success - peer already connected",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   nil,
 			setMock: func(m *mock.Mock) {
 				// We are already connected to the peer.
 				testutils.MockListPeers(m, peerList, nil)
@@ -85,19 +89,21 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "failure - list peers fails",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: listPeersErr,
+			name:          "failure - list peers fails",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   listPeersErr,
 			setMock: func(m *mock.Mock) {
 				testutils.MockListPeers(m, nil, listPeersErr)
 			},
 		},
 		{
-			name:        "failure - peer not found in graph",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: getNodeErr,
+			name:          "failure - peer not found in graph",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   getNodeErr,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -110,10 +116,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "failure - peer has no addresses",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: ErrNoAddresses,
+			name:          "failure - peer has no addresses",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   ErrNoAddresses,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -127,9 +134,10 @@ func TestSendMessage(t *testing.T) {
 		},
 
 		{
-			name:        "failure - could not connect to peer",
-			peer:        pubkey,
-			expectedErr: connectErr,
+			name:          "failure - could not connect to peer",
+			peer:          pubkey,
+			directConnect: true,
+			expectedErr:   connectErr,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -146,10 +154,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "success - peer immediately found",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: nil,
+			name:          "success - peer immediately found",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   nil,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -174,10 +183,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "success - peer found after retry",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: nil,
+			name:          "success - peer found after retry",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   nil,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -208,10 +218,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "failure - peer not found after retry",
-			peer:        pubkey,
-			peerLookups: 2,
-			expectedErr: ErrNoConnection,
+			name:          "failure - peer not found after retry",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   2,
+			expectedErr:   ErrNoConnection,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -231,6 +242,43 @@ func TestSendMessage(t *testing.T) {
 				// after 2 calls.
 				testutils.MockListPeers(m, nil, nil)
 				testutils.MockListPeers(m, nil, nil)
+			},
+		},
+		{
+			name:          "multi-hop no path",
+			peer:          pubkey,
+			directConnect: false,
+			expectedErr:   ErrNoPath,
+			setMock: func(m *mock.Mock) {
+				req := queryRoutesRequest(pubkey)
+				resp := &lndclient.QueryRoutesResponse{}
+				testutils.MockQueryRoutes(
+					m, req, resp, nil,
+				)
+			},
+		},
+		{
+			name:          "multi-hop finds path",
+			peer:          pubkey,
+			directConnect: false,
+			expectedErr:   nil,
+			setMock: func(m *mock.Mock) {
+				req := queryRoutesRequest(pubkey)
+				resp := &lndclient.QueryRoutesResponse{
+					Hops: []*lndclient.Hop{
+						{
+							PubKey: &node1,
+						},
+						{
+							PubKey: &node2,
+						},
+					},
+				}
+
+				testutils.MockQueryRoutes(m, req, resp, nil)
+
+				// Send the message to the peer.
+				testutils.MockSendAnyCustomMessage(m, nil)
 			},
 		},
 	}
@@ -270,7 +318,9 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 
 	ctxb := context.Background()
 
-	err := messenger.SendMessage(ctxb, testCase.peer, nil, nil)
+	err := messenger.SendMessage(
+		ctxb, testCase.peer, nil, nil, testCase.directConnect,
+	)
 
 	// All of our errors are wrapped, so we can just check err.Is the
 	// error we expect (also works for nil).
@@ -330,13 +380,17 @@ func mockMessageHandled(m *mock.Mock, path *lnwire.ReplyPath, data,
 // TestHandleOnionMessage tests different handling cases for onion messages.
 func TestHandleOnionMessage(t *testing.T) {
 	pubkeys := testutils.GetPubkeys(t, 3)
-	nodeKey, err := route.NewVertexFromBytes(
-		pubkeys[0].SerializeCompressed(),
-	)
-	require.NoError(t, err, "pubkey")
+	nodeKey := route.NewVertex(pubkeys[0])
+	path := []*btcec.PublicKey{
+		pubkeys[0],
+	}
+
+	privKeys := testutils.GetPrivkeys(t, 2)
 
 	// Create a single valid message that we can use across test cases.
-	msg, err := customOnionMessage(nodeKey, nil, nil)
+	msg, err := customOnionMessage(
+		privKeys[0], privKeys[1], nodeKey, path, nil, nil,
+	)
 	require.NoError(t, err, "create msg")
 
 	mockErr := errors.New("mock err")
@@ -608,17 +662,19 @@ func sendErr(t *testing.T, errChan chan<- error, err error) {
 
 // TestReceiveOnionMessages tests the messenger's receive loop for messages.
 func TestReceiveOnionMessages(t *testing.T) {
-	privkeys := testutils.GetPrivkeys(t, 1)
+	privkeys := testutils.GetPrivkeys(t, 2)
 
 	// Create an onion message that is *to our node* that we can use
 	// across tests.
 	nodePubkey := privkeys[0].PubKey()
-	nodeVertex, err := route.NewVertexFromBytes(
-		nodePubkey.SerializeCompressed(),
-	)
-	require.NoError(t, err, "node pubkey")
+	nodeVertex := route.NewVertex(nodePubkey)
+	path := []*btcec.PublicKey{
+		nodePubkey,
+	}
 
-	msg, err := customOnionMessage(nodeVertex, nil, nil)
+	msg, err := customOnionMessage(
+		privkeys[0], privkeys[1], nodeVertex, path, nil, nil,
+	)
 	require.NoError(t, err, "custom message")
 
 	mockErr := errors.New("mock")
@@ -832,4 +888,100 @@ func TestHandleRegistration(t *testing.T) {
 
 	err = messenger.RegisterHandler(validTlv, handler)
 	require.True(t, errors.Is(err, ErrShuttingDown))
+}
+
+// TestMultiHopPath tests selection of multi-hop onion message paths.
+func TestMultiHopPath(t *testing.T) {
+	var (
+		pubkeys = testutils.GetPubkeys(t, 3)
+		peer    = route.NewVertex(pubkeys[0])
+		node1   = route.NewVertex(pubkeys[1])
+		node2   = route.NewVertex(pubkeys[2])
+		mockErr = errors.New("mock err")
+	)
+	tests := []struct {
+		name            string
+		peer            route.Vertex
+		queryRoutesResp *lndclient.QueryRoutesResponse
+		queryRoutesErr  error
+		path            []*btcec.PublicKey
+		err             error
+	}{
+		{
+			name:            "no routes found",
+			peer:            peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{},
+			queryRoutesErr:  lndclient.ErrNoRouteFound,
+			path:            nil,
+			err:             nil,
+		},
+		{
+			name:            "query routes fails",
+			peer:            peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{},
+			queryRoutesErr:  mockErr,
+			path:            nil,
+			err:             mockErr,
+		},
+		{
+			name: "path found, pubkey missing",
+			peer: peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{
+				Hops: []*lndclient.Hop{
+					{
+						ChannelID: 1,
+						PubKey:    &node1,
+					},
+					{
+						ChannelID: 2,
+						PubKey:    nil,
+					},
+				},
+			},
+			path: nil,
+			err:  ErrNilPubkeyInRoute,
+		},
+		{
+			name: "path found",
+			peer: peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{
+				Hops: []*lndclient.Hop{
+					{
+						ChannelID: 1,
+						PubKey:    &node1,
+					},
+					{
+						ChannelID: 2,
+						PubKey:    &node2,
+					},
+				},
+			},
+			path: []*btcec.PublicKey{
+				pubkeys[1],
+				pubkeys[2],
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			lnd := testutils.NewMockLnd()
+			defer lnd.Mock.AssertExpectations(t)
+
+			// Setup our mock to return the response specified by
+			// the test case.
+			req := queryRoutesRequest(testCase.peer)
+			testutils.MockQueryRoutes(
+				lnd.Mock, req, testCase.queryRoutesResp,
+				testCase.queryRoutesErr,
+			)
+
+			ctxb := context.Background()
+			path, err := multiHopPath(ctxb, lnd, testCase.peer)
+			require.True(t, errors.Is(err, testCase.err))
+			require.Equal(t, testCase.path, path)
+		})
+	}
 }

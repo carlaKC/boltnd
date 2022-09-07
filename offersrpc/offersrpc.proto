@@ -34,6 +34,11 @@ message SendOnionMessageRequest {
     // An optional blinded path that can be used to supply the recipient with
     // a path to send replies over.
     BlindedPath reply_path = 3;
+
+    // If we cannot find a path to the node pubkey provided, there is an option
+    // to make a direct p2p connection to the node to deliver onion messages.
+    // This option will leak the IP of your LND node, so it is opt-in.
+    bool direct_connect = 4;
 }
 
 message BlindedPath {

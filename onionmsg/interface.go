@@ -35,6 +35,10 @@ type LndOnionMsg interface {
 
 	// GetInfo returns information about the lnd node.
 	GetInfo(ctx context.Context) (*lndclient.Info, error)
+
+	// QueryRoutes queries lnd for a route to a destination peer.
+	QueryRoutes(ctx context.Context, req lndclient.QueryRoutesRequest) (
+		*lndclient.QueryRoutesResponse, error)
 }
 
 // LndOnionSigner is an interface describing the lnd dependencies required for
@@ -61,7 +65,8 @@ type OnionMessenger interface {
 	// optional TLVs for the target peer can be included in final payloads.
 	SendMessage(ctx context.Context, peer route.Vertex,
 		replyPath *lnwire.ReplyPath,
-		finalPayloads []*lnwire.FinalHopPayload) error
+		finalPayloads []*lnwire.FinalHopPayload,
+		directConenct bool) error
 
 	// RegisterHandler adds a handler onion message payloads delivered to
 	// our node for the tlv type provided.

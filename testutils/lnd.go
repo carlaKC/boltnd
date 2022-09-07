@@ -196,3 +196,28 @@ func MockListChannels(m *mock.Mock, activeOnly, publicOnly bool,
 		channels, err,
 	)
 }
+
+// QueryRoutes mocks a call to lnd's query routes api.
+func (m *MockLND) QueryRoutes(ctx context.Context,
+	req lndclient.QueryRoutesRequest) (*lndclient.QueryRoutesResponse,
+	error) {
+
+	args := m.Mock.MethodCalled(
+		"QueryRoutes", ctx, req,
+	)
+
+	resp := args.Get(0).(*lndclient.QueryRoutesResponse)
+	return resp, args.Error(1)
+}
+
+// MockQueryRoutes primes our mock to return the response provided on a call to
+// query routes.
+func MockQueryRoutes(m *mock.Mock, req lndclient.QueryRoutesRequest,
+	resp *lndclient.QueryRoutesResponse, err error) {
+
+	m.On(
+		"QueryRoutes", mock.Anything, req,
+	).Once().Return(
+		resp, err,
+	)
+}
