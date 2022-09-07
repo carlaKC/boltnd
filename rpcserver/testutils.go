@@ -78,10 +78,11 @@ func newOffersMock() *offersMock {
 
 // SendMessage mocks sending a message.
 func (o *offersMock) SendMessage(ctx context.Context, peer route.Vertex,
-	replyPath *lnwire.ReplyPath, payloads []*lnwire.FinalHopPayload) error {
+	replyPath *lnwire.ReplyPath, payloads []*lnwire.FinalHopPayload,
+	directConnect bool) error {
 
 	args := o.Mock.MethodCalled(
-		"SendMessage", ctx, peer, replyPath, payloads,
+		"SendMessage", ctx, peer, replyPath, payloads, directConnect,
 	)
 
 	return args.Error(0)
@@ -91,10 +92,11 @@ func (o *offersMock) SendMessage(ctx context.Context, peer route.Vertex,
 // send message with the peer provided.
 func mockSendMessage(m *mock.Mock, peer route.Vertex,
 	replyPath *lnwire.ReplyPath, payloads []*lnwire.FinalHopPayload,
-	err error) {
+	directConnect bool, err error) {
 
 	m.On(
 		"SendMessage", mock.Anything, peer, replyPath, payloads,
+		directConnect,
 	).Once().Return(
 		err,
 	)

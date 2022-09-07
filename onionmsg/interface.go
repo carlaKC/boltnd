@@ -65,7 +65,8 @@ type OnionMessenger interface {
 	// optional TLVs for the target peer can be included in final payloads.
 	SendMessage(ctx context.Context, peer route.Vertex,
 		replyPath *lnwire.ReplyPath,
-		finalPayloads []*lnwire.FinalHopPayload) error
+		finalPayloads []*lnwire.FinalHopPayload,
+		directConenct bool) error
 
 	// RegisterHandler adds a handler onion message payloads delivered to
 	// our node for the tlv type provided.

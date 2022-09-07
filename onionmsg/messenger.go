@@ -44,6 +44,10 @@ var (
 	// peer within our set number of retries.
 	ErrNoConnection = errors.New("peer not connected within wait period")
 
+	// ErrNoPath is returned when we can't find a path to a peer to deliver
+	// an onion message.
+	ErrNoPath = errors.New("path not found to peer")
+
 	// ErrNoForwarding is returned if we receive an onion message intended
 	// to be forwarded, but do not support forwarding.
 	ErrNoForwarding = errors.New("received onion message for forwarding, " +
@@ -277,11 +281,12 @@ func (m *Messenger) handleRegistration(request *registerHandler,
 
 // SendMessage sends an onion message to the peer provided. The message can
 // optionally include a reply path for the recipient to use for replies and
-// payloads for the final hop. If we are not currently connected to a peer, the
-// messenger will directly connect to it and send the message.
+// payloads for the final hop. If we cannot find a path to the peer and the
+// direct connect param is true, we will make a direct connection to the peer
+// to send the message.
 func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
-	replyPath *lnwire.ReplyPath,
-	finalHopPayloads []*lnwire.FinalHopPayload) error {
+	replyPath *lnwire.ReplyPath, finalHopPayloads []*lnwire.FinalHopPayload,
+	directConnect bool) error {
 
 	sessionKey, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -293,17 +298,19 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 		return fmt.Errorf("could not get blinding key: %w", err)
 	}
 
+	if !directConnect {
+		return fmt.Errorf("%w: %v", ErrNoPath, peer)
+	}
+
+	if err := m.lookupAndConnect(ctx, peer); err != nil {
+		return fmt.Errorf("lookup and connect: %w", err)
+	}
+
 	msg, err := customOnionMessage(
 		sessionKey, blindingKey, peer, replyPath, finalHopPayloads,
 	)
 	if err != nil {
 		return fmt.Errorf("could not create message: %w", err)
-	}
-
-	// Check whether we're connected to the next peer, making an ad-hoc
-	// connection if we're not.
-	if err := m.lookupAndConnect(ctx, peer); err != nil {
-		return fmt.Errorf("lookup and connect: %w", err)
 	}
 
 	return m.lnd.SendCustomMessage(ctx, *msg)

@@ -24,6 +24,10 @@ type sendMessageTest struct {
 	// peer is the peer to send our message to.
 	peer route.Vertex
 
+	// directConnect indicates whether we should connect to the peer to
+	// send the message.
+	directConnect bool
+
 	// peerLookups is the number of times that we lookup our peer after
 	// connecting.
 	peerLookups int
@@ -72,10 +76,11 @@ func TestSendMessage(t *testing.T) {
 
 	tests := []sendMessageTest{
 		{
-			name:        "success - peer already connected",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: nil,
+			name:          "success - peer already connected",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   nil,
 			setMock: func(m *mock.Mock) {
 				// We are already connected to the peer.
 				testutils.MockListPeers(m, peerList, nil)
@@ -85,19 +90,21 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "failure - list peers fails",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: listPeersErr,
+			name:          "failure - list peers fails",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   listPeersErr,
 			setMock: func(m *mock.Mock) {
 				testutils.MockListPeers(m, nil, listPeersErr)
 			},
 		},
 		{
-			name:        "failure - peer not found in graph",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: getNodeErr,
+			name:          "failure - peer not found in graph",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   getNodeErr,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -110,10 +117,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "failure - peer has no addresses",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: ErrNoAddresses,
+			name:          "failure - peer has no addresses",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   ErrNoAddresses,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -127,9 +135,10 @@ func TestSendMessage(t *testing.T) {
 		},
 
 		{
-			name:        "failure - could not connect to peer",
-			peer:        pubkey,
-			expectedErr: connectErr,
+			name:          "failure - could not connect to peer",
+			peer:          pubkey,
+			directConnect: true,
+			expectedErr:   connectErr,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -146,10 +155,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "success - peer immediately found",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: nil,
+			name:          "success - peer immediately found",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   nil,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -174,10 +184,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "success - peer found after retry",
-			peer:        pubkey,
-			peerLookups: 5,
-			expectedErr: nil,
+			name:          "success - peer found after retry",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   5,
+			expectedErr:   nil,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -208,10 +219,11 @@ func TestSendMessage(t *testing.T) {
 			},
 		},
 		{
-			name:        "failure - peer not found after retry",
-			peer:        pubkey,
-			peerLookups: 2,
-			expectedErr: ErrNoConnection,
+			name:          "failure - peer not found after retry",
+			peer:          pubkey,
+			directConnect: true,
+			peerLookups:   2,
+			expectedErr:   ErrNoConnection,
 			setMock: func(m *mock.Mock) {
 				// We have no peers at present.
 				testutils.MockListPeers(m, nil, nil)
@@ -270,7 +282,9 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 
 	ctxb := context.Background()
 
-	err := messenger.SendMessage(ctxb, testCase.peer, nil, nil)
+	err := messenger.SendMessage(
+		ctxb, testCase.peer, nil, nil, testCase.directConnect,
+	)
 
 	// All of our errors are wrapped, so we can just check err.Is the
 	// error we expect (also works for nil).
