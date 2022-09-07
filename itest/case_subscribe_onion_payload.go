@@ -149,7 +149,7 @@ func SubscribeOnionPayload(t *testing.T, net *lntest.NetworkHarness) {
 		Hops: []*offersrpc.BlindedHop{
 			{
 				BlindedNodeId: pubkeys[2].SerializeCompressed(),
-				EncrypedData:  []byte{1, 2, 3},
+				EncryptedData: []byte{1, 2, 3},
 			},
 		},
 	}

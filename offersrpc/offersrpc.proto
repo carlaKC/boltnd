@@ -12,6 +12,9 @@ service Offers {
 
     rpc SubscribeOnionPayload (SubscribeOnionPayloadRequest)
         returns (stream SubscribeOnionPayloadResponse);
+
+    rpc GenerateBlindedRoute (GenerateBlindedRouteRequest)
+        returns (GenerateBlindedRouteResponse);
 }
 
 message SendOnionMessageRequest {
@@ -61,7 +64,7 @@ message BlindedHop {
     bytes blinded_node_id = 1;
 
     // The encrypted data blob for the hop.
-    bytes encryped_data = 2;
+    bytes encrypted_data = 2;
 }
 
 message SendOnionMessageResponse {
@@ -126,4 +129,14 @@ message SubscribeOnionPayloadResponse {
     // Reply path is an optional reply path included by the sender to receive
     // responses to this onion message on.
     BlindedPath reply_path = 2;
+}
+
+message GenerateBlindedRouteRequest {
+    // The set of protocol features that the nodes along the route should have.
+    repeated uint64 features = 1;
+}
+
+message GenerateBlindedRouteResponse {
+    // A blinded route to our node.
+    BlindedPath route = 1;
 }

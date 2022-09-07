@@ -26,7 +26,7 @@ func assertBlindedPathEqual(t *testing.T, expected,
 		require.Equal(t, hop.BlindedNodeId,
 			actual.Hops[i].BlindedNodeId, "blinded node id", i)
 
-		require.Equal(t, hop.EncrypedData, actual.Hops[i].EncrypedData,
-			"encrypted data", i)
+		require.Equal(t, hop.EncryptedData,
+			actual.Hops[i].EncryptedData, "encrypted data", i)
 	}
 }
