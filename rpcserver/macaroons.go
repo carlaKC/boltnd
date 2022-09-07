@@ -17,4 +17,8 @@ var RPCServerPermissions = map[string][]bakery.Op{
 		Entity: "offchain",
 		Action: "read",
 	}},
+	"/offersrpc.Offers/GenerateBlindedRoute": {{
+		Entity: "offchain",
+		Action: "read",
+	}},
 }

@@ -4,6 +4,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offersrpc"
+	sphinx "github.com/lightningnetwork/lightning-onion"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -76,4 +77,23 @@ func composeReplyPath(resp *lnwire.ReplyPath) *offersrpc.BlindedPath {
 	}
 
 	return blindedPath
+}
+
+func composeBlindedRoute(route *sphinx.BlindedPath) *offersrpc.BlindedPath {
+	rpcRoute := &offersrpc.BlindedPath{
+		IntroductionNode: route.IntroductionPoint.SerializeCompressed(),
+	}
+
+	if len(route.EncryptedData) > 0 {
+		rpcRoute.IntroductionEncryptedData = route.EncryptedData[0]
+	}
+
+	for i := 1; i < len(route.BlindedHops); i++ {
+		rpcRoute.Hops[i] = &offersrpc.BlindedHop{
+			BlindedNodeId: route.BlindedHops[i].SerializeCompressed(),
+			EncryptedData: route.EncryptedData[i],
+		}
+	}
+
+	return rpcRoute
 }
