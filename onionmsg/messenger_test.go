@@ -850,3 +850,99 @@ func TestHandleRegistration(t *testing.T) {
 	err = messenger.RegisterHandler(validTlv, handler)
 	require.True(t, errors.Is(err, ErrShuttingDown))
 }
+
+// TestMultiHopPath tests selection of multi-hop onion message paths.
+func TestMultiHopPath(t *testing.T) {
+	var (
+		pubkeys = testutils.GetPubkeys(t, 3)
+		peer    = route.NewVertex(pubkeys[0])
+		node1   = route.NewVertex(pubkeys[1])
+		node2   = route.NewVertex(pubkeys[2])
+		mockErr = errors.New("mock err")
+	)
+	tests := []struct {
+		name            string
+		peer            route.Vertex
+		queryRoutesResp *lndclient.QueryRoutesResponse
+		queryRoutesErr  error
+		path            []*btcec.PublicKey
+		err             error
+	}{
+		{
+			name:            "no routes found",
+			peer:            peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{},
+			queryRoutesErr:  lndclient.ErrNoRouteFound,
+			path:            nil,
+			err:             nil,
+		},
+		{
+			name:            "query routes fails",
+			peer:            peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{},
+			queryRoutesErr:  mockErr,
+			path:            nil,
+			err:             mockErr,
+		},
+		{
+			name: "path found, pubkey missing",
+			peer: peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{
+				Hops: []*lndclient.Hop{
+					{
+						ChannelID: 1,
+						PubKey:    &node1,
+					},
+					{
+						ChannelID: 2,
+						PubKey:    nil,
+					},
+				},
+			},
+			path: nil,
+			err:  ErrNilPubkeyInRoute,
+		},
+		{
+			name: "path found",
+			peer: peer,
+			queryRoutesResp: &lndclient.QueryRoutesResponse{
+				Hops: []*lndclient.Hop{
+					{
+						ChannelID: 1,
+						PubKey:    &node1,
+					},
+					{
+						ChannelID: 2,
+						PubKey:    &node2,
+					},
+				},
+			},
+			path: []*btcec.PublicKey{
+				pubkeys[1],
+				pubkeys[2],
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			lnd := testutils.NewMockLnd()
+			defer lnd.Mock.AssertExpectations(t)
+
+			// Setup our mock to return the response specified by
+			// the test case.
+			req := queryRoutesRequest(testCase.peer)
+			testutils.MockQueryRoutes(
+				lnd.Mock, req, testCase.queryRoutesResp,
+				testCase.queryRoutesErr,
+			)
+
+			ctxb := context.Background()
+			path, err := multiHopPath(ctxb, lnd, testCase.peer)
+			require.True(t, errors.Is(err, testCase.err))
+			require.Equal(t, testCase.path, path)
+		})
+	}
+}

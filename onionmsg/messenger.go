@@ -14,6 +14,7 @@ import (
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
 	sphinx "github.com/lightningnetwork/lightning-onion"
+	lndwire "github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -66,6 +67,10 @@ var (
 	// ErrBadOnionBlob is returned when we receive a bad onion blob within
 	// our onion message.
 	ErrBadOnionBlob = errors.New("invalid onion blob")
+
+	// ErrNilPubkeyInRoute is returned when we query lnd for a route and
+	// do not get a node pubkey alongside a channel.
+	ErrNilPubkeyInRoute = errors.New("nil pubkey in route")
 
 	// ErrShuttingDown is returned when the messenger exits.
 	ErrShuttingDown = errors.New("messenger shutting down")
@@ -389,6 +394,63 @@ func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
 	}
 
 	return false, nil
+}
+
+// queryRoutesRequest creates a query routes request for finding onion message
+// multi-hop paths.
+func queryRoutesRequest(peer route.Vertex) lndclient.QueryRoutesRequest {
+	return lndclient.QueryRoutesRequest{
+		PubKey: peer,
+		// We disable mission control because we don't care about
+		// the liquidity in these channels, just that they exist.
+		UseMissionControl: false,
+		// We set our query amount to 1 sat, because we just want to
+		// be able to route along _any_ channel. This may fall under
+		// some channels minimum msat (that we could route), but many
+		// nodes operate with default parameters so it shouldn't be
+		// _too_ problematic.
+		AmtMsat: lndwire.MilliSatoshi(1000),
+		// Set a very large fee limit because we won't actually pay
+		// any fees for onion messages and want to include the maximum
+		// set of channels possible.
+		FeeLimitMsat: lndwire.MaxMilliSatoshi,
+	}
+}
+
+// multiHopPath finds a path from our node to the target that can be used
+// to relay onion messages. If no path is found, a nil path will be returned.
+//
+// TODO: Replace use of query routes with a graph walk, this is a lazy drop-in
+// solution to get onion messaging paths based on the channel graph.
+func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer route.Vertex) (
+	[]*btcec.PublicKey, error) {
+
+	resp, err := lnd.QueryRoutes(ctx, queryRoutesRequest(peer))
+	switch err {
+	// If we can't find any routes, return a nil path.
+	case lndclient.ErrNoRouteFound:
+		return nil, nil
+
+	case nil:
+		path := make([]*btcec.PublicKey, len(resp.Hops))
+
+		for i, hop := range resp.Hops {
+			if hop.PubKey == nil {
+				return nil, ErrNilPubkeyInRoute
+			}
+
+			path[i], err = btcec.ParsePubKey(hop.PubKey[:])
+			if err != nil {
+				return nil, fmt.Errorf("hop: %v parse "+
+					"pubkey: %w", i, err)
+			}
+		}
+
+		return path, nil
+
+	default:
+		return nil, fmt.Errorf("query routes failed: %w", err)
+	}
 }
 
 // customOnionMessage creates an onion message to our peer and wraps it in
