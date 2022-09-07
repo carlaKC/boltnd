@@ -303,16 +303,46 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 		return fmt.Errorf("could not get blinding key: %w", err)
 	}
 
+	peerPubkey, err := btcec.ParsePubKey(peer[:])
+	if err != nil {
+		return fmt.Errorf("could not parse peer key: %w", err)
+	}
+
+	// Select a path for the onion message and directly connect to the peer
+	// if requested.
+	var path []*btcec.PublicKey
 	if !directConnect {
+		path, err = multiHopPath(ctx, m.lnd, peer)
+		if err != nil {
+			return fmt.Errorf("could not find path to %v: %w",
+				peer, err)
+		}
+	} else {
+		if err := m.lookupAndConnect(ctx, peer); err != nil {
+			return fmt.Errorf("lookup and connect: %w", err)
+		}
+
+		path = []*btcec.PublicKey{
+			peerPubkey,
+		}
+	}
+
+	// Check whether we have a path to the target peer (this will always
+	// pass for direct connect, but may fail for multi-hop if no route was
+	// found).
+	if len(path) == 0 {
 		return fmt.Errorf("%w: %v", ErrNoPath, peer)
 	}
 
-	if err := m.lookupAndConnect(ctx, peer); err != nil {
-		return fmt.Errorf("lookup and connect: %w", err)
-	}
+	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
+		peerPubkey.SerializeCompressed(),
+		path[0].SerializeCompressed(), len(path))
 
+	// Create a custom onion message that we will send to the first node in
+	// our path.
 	msg, err := customOnionMessage(
-		sessionKey, blindingKey, peer, replyPath, finalHopPayloads,
+		sessionKey, blindingKey, route.NewVertex(path[0]), path,
+		replyPath, finalHopPayloads,
 	)
 	if err != nil {
 		return fmt.Errorf("could not create message: %w", err)
@@ -456,18 +486,10 @@ func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer route.Vertex) (
 // customOnionMessage creates an onion message to our peer and wraps it in
 // a custom lnd message.
 func customOnionMessage(sessionKey, blindingKey *btcec.PrivateKey,
-	peer route.Vertex, replyPath *lnwire.ReplyPath,
+	peer route.Vertex, path []*btcec.PublicKey,
+	replyPath *lnwire.ReplyPath,
 	finalPayloads []*lnwire.FinalHopPayload) (*lndclient.CustomMessage,
 	error) {
-
-	pubkey, err := btcec.ParsePubKey(peer[:])
-	if err != nil {
-		return nil, fmt.Errorf("invalid pubkey: %w", err)
-	}
-
-	path := []*btcec.PublicKey{
-		pubkey,
-	}
 
 	// Create and encode an onion message.
 	msg, err := createOnionMessage(

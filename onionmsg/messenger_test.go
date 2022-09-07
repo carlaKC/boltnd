@@ -42,12 +42,11 @@ type sendMessageTest struct {
 // TestSendMessage tests sending of onion messages using lnd's custom message
 // api.
 func TestSendMessage(t *testing.T) {
-	pubkeys := testutils.GetPubkeys(t, 1)
+	pubkeys := testutils.GetPubkeys(t, 3)
 
-	pubkey, err := route.NewVertexFromBytes(
-		pubkeys[0].SerializeCompressed(),
-	)
-	require.NoError(t, err, "pubkey")
+	pubkey := route.NewVertex(pubkeys[0])
+	node1 := route.NewVertex(pubkeys[1])
+	node2 := route.NewVertex(pubkeys[2])
 
 	var (
 		peerList = []lndclient.Peer{
@@ -245,6 +244,43 @@ func TestSendMessage(t *testing.T) {
 				testutils.MockListPeers(m, nil, nil)
 			},
 		},
+		{
+			name:          "multi-hop no path",
+			peer:          pubkey,
+			directConnect: false,
+			expectedErr:   ErrNoPath,
+			setMock: func(m *mock.Mock) {
+				req := queryRoutesRequest(pubkey)
+				resp := &lndclient.QueryRoutesResponse{}
+				testutils.MockQueryRoutes(
+					m, req, resp, nil,
+				)
+			},
+		},
+		{
+			name:          "multi-hop finds path",
+			peer:          pubkey,
+			directConnect: false,
+			expectedErr:   nil,
+			setMock: func(m *mock.Mock) {
+				req := queryRoutesRequest(pubkey)
+				resp := &lndclient.QueryRoutesResponse{
+					Hops: []*lndclient.Hop{
+						{
+							PubKey: &node1,
+						},
+						{
+							PubKey: &node2,
+						},
+					},
+				}
+
+				testutils.MockQueryRoutes(m, req, resp, nil)
+
+				// Send the message to the peer.
+				testutils.MockSendAnyCustomMessage(m, nil)
+			},
+		},
 	}
 
 	for _, testCase := range tests {
@@ -345,12 +381,15 @@ func mockMessageHandled(m *mock.Mock, path *lnwire.ReplyPath, data,
 func TestHandleOnionMessage(t *testing.T) {
 	pubkeys := testutils.GetPubkeys(t, 3)
 	nodeKey := route.NewVertex(pubkeys[0])
+	path := []*btcec.PublicKey{
+		pubkeys[0],
+	}
 
 	privKeys := testutils.GetPrivkeys(t, 2)
 
 	// Create a single valid message that we can use across test cases.
 	msg, err := customOnionMessage(
-		privKeys[0], privKeys[1], nodeKey, nil, nil,
+		privKeys[0], privKeys[1], nodeKey, path, nil, nil,
 	)
 	require.NoError(t, err, "create msg")
 
@@ -628,13 +667,13 @@ func TestReceiveOnionMessages(t *testing.T) {
 	// Create an onion message that is *to our node* that we can use
 	// across tests.
 	nodePubkey := privkeys[0].PubKey()
-	nodeVertex, err := route.NewVertexFromBytes(
-		nodePubkey.SerializeCompressed(),
-	)
-	require.NoError(t, err, "node pubkey")
+	nodeVertex := route.NewVertex(nodePubkey)
+	path := []*btcec.PublicKey{
+		nodePubkey,
+	}
 
 	msg, err := customOnionMessage(
-		privkeys[0], privkeys[1], nodeVertex, nil, nil,
+		privkeys[0], privkeys[1], nodeVertex, path, nil, nil,
 	)
 	require.NoError(t, err, "custom message")
 
