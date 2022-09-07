@@ -354,6 +354,27 @@ func mockPayloadDecode(m *mock.Mock, payload *lnwire.OnionMessagePayload,
 	)
 }
 
+// DecryptBlob mocks decrypting of our onion message's encrypted blob.
+func (h *handleOnionMesageMock) DecryptBlob(blindingPoint *btcec.PublicKey,
+	payload *lnwire.OnionMessagePayload) (*lnwire.BlindedRouteData, error) {
+
+	args := h.Mock.MethodCalled("decryptBlob", blindingPoint, payload)
+
+	return args.Get(0).(*lnwire.BlindedRouteData), args.Error(1)
+}
+
+// mockDecryptBlob primes our mock for a call to decrypt blob.
+func mockDecryptBlob(m *mock.Mock, blindingPoint *btcec.PublicKey,
+	payload *lnwire.OnionMessagePayload, data *lnwire.BlindedRouteData,
+	err error) {
+
+	m.On(
+		"decryptBlob", blindingPoint, payload,
+	).Once().Return(
+		data, err,
+	)
+}
+
 // OnionMessageHandler mocks a call to handle an onion message.
 func (h *handleOnionMesageMock) OnionMessageHandler(path *lnwire.ReplyPath,
 	encrypted []byte, payload []byte) error {
@@ -504,6 +525,15 @@ func TestHandleOnionMessage(t *testing.T) {
 			// hop.
 			setupMock: func(m *mock.Mock) {
 				mockPayloadDecode(m, payloadNoFinalHops, nil)
+
+				data := &lnwire.BlindedRouteData{
+					NextNodeID: pubkeys[0],
+				}
+
+				mockDecryptBlob(
+					m, privKeys[1].PubKey(),
+					payloadNoFinalHops, data, nil,
+				)
 			},
 			expectedErr: ErrNoForwarding,
 		},
@@ -647,9 +677,10 @@ func TestHandleOnionMessage(t *testing.T) {
 			}
 
 			kit := &onionMessageKit{
-				processOnion:  testCase.processOnion,
-				decodePayload: mock.DecodePayload,
-				handlers:      handlers,
+				processOnion:    testCase.processOnion,
+				decodePayload:   mock.DecodePayload,
+				decryptDataBlob: mock.DecryptBlob,
+				handlers:        handlers,
 			}
 
 			err := handleOnionMessage(testCase.msg, kit)

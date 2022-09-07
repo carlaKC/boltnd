@@ -2,11 +2,23 @@ package onionmsg
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/carlakc/boltnd/lnwire"
 	sphinx "github.com/lightningnetwork/lightning-onion"
+)
+
+var (
+	// ErrNoEncryptedData is returned when the encrypted data TLV is not
+	// present when it is required.
+	ErrNoEncryptedData = errors.New("encrypted data blob required")
+
+	// ErrNoForwardingPayload is returned when no onion message payload
+	// is provided to allow forwarding messages.
+	ErrNoForwardingPayload = errors.New("no payload provided for " +
+		"forwarding")
 )
 
 // encodeBlindedPayload is the function signature used to encode a TLV stream
@@ -178,4 +190,39 @@ func createOnionMessage(path []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
 	return lnwire.NewOnionMessage(
 		blindedPath.BlindingPoint, buf.Bytes(),
 	), nil
+}
+
+// decryptBlobFunc returns a closure that can be used to decrypt an onion
+// message's encrypted data blob and decode it.
+func decryptBlobFunc(nodeKey sphinx.SingleKeyECDH) func(*btcec.PublicKey,
+	*lnwire.OnionMessagePayload) (*lnwire.BlindedRouteData, error) {
+
+	return func(blindingPoint *btcec.PublicKey,
+		payload *lnwire.OnionMessagePayload) (*lnwire.BlindedRouteData,
+		error) {
+
+		if payload == nil {
+			return nil, ErrNoForwardingPayload
+		}
+
+		if len(payload.EncryptedData) == 0 {
+			return nil, ErrNoEncryptedData
+		}
+
+		decrypted, err := sphinx.DecryptBlindedData(
+			nodeKey, blindingPoint, payload.EncryptedData,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("could not decrypt data "+
+				"blob: %w", err)
+		}
+
+		data, err := lnwire.DecodeBlindedRouteData(decrypted)
+		if err != nil {
+			return nil, fmt.Errorf("could not decode data "+
+				"blob: %w", err)
+		}
+
+		return data, nil
+	}
 }

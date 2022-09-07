@@ -565,6 +565,9 @@ func (m *Messenger) manageOnionMessages(ctx context.Context) error {
 					processOnion:  m.processOnion,
 					decodePayload: lnwire.DecodeOnionMessagePayload,
 					handlers:      m.onionMsgHandlers,
+					decryptDataBlob: decryptBlobFunc(
+						m.nodeKeyECDH,
+					),
 				},
 			)
 			if err == nil {
@@ -666,6 +669,12 @@ type onionMessageKit struct {
 	// decodePayload provides the ability to process onion messages
 	// payloads.
 	decodePayload func([]byte) (*lnwire.OnionMessagePayload, error)
+
+	// decryptDataBlob decrypts the encrypted data in an onion message's
+	// payload.
+	decryptDataBlob func(blindingPoint *btcec.PublicKey,
+		payload *lnwire.OnionMessagePayload) (*lnwire.BlindedRouteData,
+		error)
 
 	// handlers is a set of handler functions for onion messages that are
 	// addressed to our node. It registers one handler per final hop payload
@@ -769,6 +778,14 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 
 		if processedPacket.NextPacket == nil {
 			return ErrNoForwardingOnion
+		}
+
+		_, err := kit.decryptDataBlob(
+			onionMsg.BlindingPoint, payload,
+		)
+		if err != nil {
+			return fmt.Errorf("could not decrypt data blob: %w",
+				err)
 		}
 
 		return ErrNoForwarding
