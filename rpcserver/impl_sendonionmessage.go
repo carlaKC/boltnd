@@ -29,9 +29,10 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 		return nil, err
 	}
 
-	err = s.onionMsgr.SendMessage(
-		ctx, pubkey, replyPath, finalHop, req.DirectConnect,
+	onionReq := onionmsg.NewSendMessageRequest(
+		pubkey, replyPath, finalHop, req.DirectConnect,
 	)
+	err = s.onionMsgr.SendMessage(ctx, onionReq)
 	switch {
 	// If we got a no path error, prompt user to try direct connect if
 	// they want to.

@@ -317,10 +317,11 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 	messenger.lookupPeerBackoff = 0
 
 	ctxb := context.Background()
-
-	err := messenger.SendMessage(
-		ctxb, testCase.peer, nil, nil, testCase.directConnect,
+	req := NewSendMessageRequest(
+		testCase.peer, nil, nil, testCase.directConnect,
 	)
+
+	err := messenger.SendMessage(ctxb, req)
 
 	// All of our errors are wrapped, so we can just check err.Is the
 	// error we expect (also works for nil).

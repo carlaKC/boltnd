@@ -291,14 +291,45 @@ func (m *Messenger) handleRegistration(request *registerHandler,
 	}
 }
 
+// SendMessageRequest contains the request parameters for sending an onion
+// message.
+type SendMessageRequest struct {
+	// Peer is the destination that we are sending the message to.
+	Peer route.Vertex
+
+	// ReplyPath is an optional reply path to our own node, included to
+	// allow the recipient to reply to the message.
+	ReplyPath *lnwire.ReplyPath
+
+	// FinalHopPayloads is a set of tlv types / values to include in the
+	// payload for the final hop.
+	FinalPayloads []*lnwire.FinalHopPayload
+
+	// DirectConnect indicates whether we should make a direct p2p
+	// connection to the target node.
+	DirectConnect bool
+}
+
+// NewSendMessageRequest creates an onion message request.
+func NewSendMessageRequest(destination route.Vertex,
+	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
+	directConnect bool) *SendMessageRequest {
+
+	return &SendMessageRequest{
+		Peer:          destination,
+		ReplyPath:     replyPath,
+		FinalPayloads: finalPayloads,
+		DirectConnect: directConnect,
+	}
+}
+
 // SendMessage sends an onion message to the peer provided. The message can
 // optionally include a reply path for the recipient to use for replies and
 // payloads for the final hop. If we cannot find a path to the peer and the
 // direct connect param is true, we will make a direct connection to the peer
 // to send the message.
-func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
-	replyPath *lnwire.ReplyPath, finalHopPayloads []*lnwire.FinalHopPayload,
-	directConnect bool) error {
+func (m *Messenger) SendMessage(ctx context.Context,
+	req *SendMessageRequest) error {
 
 	sessionKey, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -310,7 +341,7 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 		return fmt.Errorf("could not get blinding key: %w", err)
 	}
 
-	peerPubkey, err := btcec.ParsePubKey(peer[:])
+	peerPubkey, err := btcec.ParsePubKey(req.Peer[:])
 	if err != nil {
 		return fmt.Errorf("could not parse peer key: %w", err)
 	}
@@ -318,14 +349,14 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
 	var path []*btcec.PublicKey
-	if !directConnect {
-		path, err = multiHopPath(ctx, m.lnd, peer)
+	if !req.DirectConnect {
+		path, err = multiHopPath(ctx, m.lnd, req.Peer)
 		if err != nil {
 			return fmt.Errorf("could not find path to %v: %w",
-				peer, err)
+				req.Peer, err)
 		}
 	} else {
-		if err := m.lookupAndConnect(ctx, peer); err != nil {
+		if err := m.lookupAndConnect(ctx, req.Peer); err != nil {
 			return fmt.Errorf("lookup and connect: %w", err)
 		}
 
@@ -338,7 +369,7 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 	// pass for direct connect, but may fail for multi-hop if no route was
 	// found).
 	if len(path) == 0 {
-		return fmt.Errorf("%w: %v", ErrNoPath, peer)
+		return fmt.Errorf("%w: %v", ErrNoPath, req.Peer)
 	}
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
@@ -349,7 +380,7 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 	// our path.
 	msg, err := customOnionMessage(
 		sessionKey, blindingKey, route.NewVertex(path[0]), path,
-		replyPath, finalHopPayloads,
+		req.ReplyPath, req.FinalPayloads,
 	)
 	if err != nil {
 		return fmt.Errorf("could not create message: %w", err)

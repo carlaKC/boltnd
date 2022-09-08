@@ -7,6 +7,7 @@ import (
 
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/carlakc/boltnd/onionmsg"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/stretchr/testify/mock"
@@ -50,10 +51,11 @@ func TestRPCSendOnionMessage(t *testing.T) {
 			name: "send message failed",
 			// Setup our mock to fail sending a message.
 			setupMock: func(m *mock.Mock) {
-				mockSendMessage(
-					m, vertex, nil, nil, true,
-					errors.New("mock"),
+				req := onionmsg.NewSendMessageRequest(
+					vertex, nil, nil, true,
 				)
+
+				mockSendMessage(m, req, errors.New("mock"))
 			},
 			request: &offersrpc.SendOnionMessageRequest{
 				Pubkey:        pubkeyBytes,
@@ -66,7 +68,11 @@ func TestRPCSendOnionMessage(t *testing.T) {
 			name: "send message succeeds",
 			// Setup our mock to successfully send the message.
 			setupMock: func(m *mock.Mock) {
-				mockSendMessage(m, vertex, nil, nil, false, nil)
+				req := onionmsg.NewSendMessageRequest(
+					vertex, nil, nil, false,
+				)
+
+				mockSendMessage(m, req, nil)
 			},
 			request: &offersrpc.SendOnionMessageRequest{
 				Pubkey:        pubkeyBytes,
@@ -81,10 +87,11 @@ func TestRPCSendOnionMessage(t *testing.T) {
 					finalPayload,
 				}
 
-				mockSendMessage(
-					m, vertex, nil, finalPayloads, true,
-					nil,
+				req := onionmsg.NewSendMessageRequest(
+					vertex, nil, finalPayloads, true,
 				)
+
+				mockSendMessage(m, req, nil)
 			},
 			request: &offersrpc.SendOnionMessageRequest{
 				Pubkey: pubkeyBytes,
