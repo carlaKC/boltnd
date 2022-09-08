@@ -295,7 +295,7 @@ func (m *Messenger) handleRegistration(request *registerHandler,
 // message.
 type SendMessageRequest struct {
 	// Peer is the destination that we are sending the message to.
-	Peer route.Vertex
+	Peer *btcec.PublicKey
 
 	// ReplyPath is an optional reply path to our own node, included to
 	// allow the recipient to reply to the message.
@@ -311,7 +311,7 @@ type SendMessageRequest struct {
 }
 
 // NewSendMessageRequest creates an onion message request.
-func NewSendMessageRequest(destination route.Vertex,
+func NewSendMessageRequest(destination *btcec.PublicKey,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
 	directConnect bool) *SendMessageRequest {
 
@@ -341,11 +341,6 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		return fmt.Errorf("could not get blinding key: %w", err)
 	}
 
-	peerPubkey, err := btcec.ParsePubKey(req.Peer[:])
-	if err != nil {
-		return fmt.Errorf("could not parse peer key: %w", err)
-	}
-
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
 	var path []*btcec.PublicKey
@@ -361,7 +356,7 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		}
 
 		path = []*btcec.PublicKey{
-			peerPubkey,
+			req.Peer,
 		}
 	}
 
@@ -373,7 +368,7 @@ func (m *Messenger) SendMessage(ctx context.Context,
 	}
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
-		peerPubkey.SerializeCompressed(),
+		req.Peer.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
 	// Create a custom onion message that we will send to the first node in
@@ -392,7 +387,7 @@ func (m *Messenger) SendMessage(ctx context.Context,
 // lookupAndConnect checks whether we have a connection with a peer, and  looks
 // it up in the graph and makes a connection if we're not already connected.
 func (m *Messenger) lookupAndConnect(ctx context.Context,
-	peer route.Vertex) error {
+	peer *btcec.PublicKey) error {
 
 	// If we're already peered with the node, exit early.
 	isPeer, err := m.findPeer(ctx, peer)
@@ -404,7 +399,8 @@ func (m *Messenger) lookupAndConnect(ctx context.Context,
 		return nil
 	}
 
-	info, err := m.lnd.GetNodeInfo(ctx, peer, false)
+	vertex := route.NewVertex(peer)
+	info, err := m.lnd.GetNodeInfo(ctx, vertex, false)
 	if err != nil {
 		return fmt.Errorf("could not lookup node: %w", err)
 	}
@@ -415,7 +411,7 @@ func (m *Messenger) lookupAndConnect(ctx context.Context,
 
 	// Make a permanent connection to the peer so that they don't get
 	// pruned because we don't have a channel with them.
-	err = m.lnd.Connect(ctx, peer, info.Addresses[0], true)
+	err = m.lnd.Connect(ctx, vertex, info.Addresses[0], true)
 	if err != nil {
 		return fmt.Errorf("could not connect to peer: %w", err)
 	}
@@ -446,7 +442,7 @@ func (m *Messenger) lookupAndConnect(ctx context.Context,
 }
 
 // findPeer looks for a peer's pubkey in our list of online peers.
-func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
+func (m *Messenger) findPeer(ctx context.Context, peer *btcec.PublicKey) (bool,
 	error) {
 
 	peers, err := m.lnd.ListPeers(ctx)
@@ -456,7 +452,7 @@ func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
 
 	// If we're already peers, we can just return early.
 	for _, currentPeer := range peers {
-		if currentPeer.Pubkey == peer {
+		if currentPeer.Pubkey == route.NewVertex(peer) {
 			return true, nil
 		}
 	}
@@ -466,9 +462,9 @@ func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
 
 // queryRoutesRequest creates a query routes request for finding onion message
 // multi-hop paths.
-func queryRoutesRequest(peer route.Vertex) lndclient.QueryRoutesRequest {
+func queryRoutesRequest(peer *btcec.PublicKey) lndclient.QueryRoutesRequest {
 	return lndclient.QueryRoutesRequest{
-		PubKey: peer,
+		PubKey: route.NewVertex(peer),
 		// We disable mission control because we don't care about
 		// the liquidity in these channels, just that they exist.
 		UseMissionControl: false,
@@ -490,7 +486,7 @@ func queryRoutesRequest(peer route.Vertex) lndclient.QueryRoutesRequest {
 //
 // TODO: Replace use of query routes with a graph walk, this is a lazy drop-in
 // solution to get onion messaging paths based on the channel graph.
-func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer route.Vertex) (
+func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer *btcec.PublicKey) (
 	[]*btcec.PublicKey, error) {
 
 	resp, err := lnd.QueryRoutes(ctx, queryRoutesRequest(peer))

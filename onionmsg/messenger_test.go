@@ -22,7 +22,7 @@ type sendMessageTest struct {
 	name string
 
 	// peer is the peer to send our message to.
-	peer route.Vertex
+	peer *btcec.PublicKey
 
 	// directConnect indicates whether we should connect to the peer to
 	// send the message.
@@ -76,7 +76,7 @@ func TestSendMessage(t *testing.T) {
 	tests := []sendMessageTest{
 		{
 			name:          "success - peer already connected",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			peerLookups:   5,
 			expectedErr:   nil,
@@ -90,7 +90,7 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "failure - list peers fails",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			peerLookups:   5,
 			expectedErr:   listPeersErr,
@@ -100,7 +100,7 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "failure - peer not found in graph",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			peerLookups:   5,
 			expectedErr:   getNodeErr,
@@ -117,7 +117,7 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "failure - peer has no addresses",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			peerLookups:   5,
 			expectedErr:   ErrNoAddresses,
@@ -135,7 +135,7 @@ func TestSendMessage(t *testing.T) {
 
 		{
 			name:          "failure - could not connect to peer",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			expectedErr:   connectErr,
 			setMock: func(m *mock.Mock) {
@@ -155,7 +155,7 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "success - peer immediately found",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			peerLookups:   5,
 			expectedErr:   nil,
@@ -184,7 +184,7 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "success - peer found after retry",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			peerLookups:   5,
 			expectedErr:   nil,
@@ -219,7 +219,7 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "failure - peer not found after retry",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: true,
 			peerLookups:   2,
 			expectedErr:   ErrNoConnection,
@@ -246,11 +246,11 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "multi-hop no path",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: false,
 			expectedErr:   ErrNoPath,
 			setMock: func(m *mock.Mock) {
-				req := queryRoutesRequest(pubkey)
+				req := queryRoutesRequest(pubkeys[0])
 				resp := &lndclient.QueryRoutesResponse{}
 				testutils.MockQueryRoutes(
 					m, req, resp, nil,
@@ -259,11 +259,11 @@ func TestSendMessage(t *testing.T) {
 		},
 		{
 			name:          "multi-hop finds path",
-			peer:          pubkey,
+			peer:          pubkeys[0],
 			directConnect: false,
 			expectedErr:   nil,
 			setMock: func(m *mock.Mock) {
-				req := queryRoutesRequest(pubkey)
+				req := queryRoutesRequest(pubkeys[0])
 				resp := &lndclient.QueryRoutesResponse{
 					Hops: []*lndclient.Hop{
 						{
@@ -980,14 +980,14 @@ func TestHandleRegistration(t *testing.T) {
 func TestMultiHopPath(t *testing.T) {
 	var (
 		pubkeys = testutils.GetPubkeys(t, 3)
-		peer    = route.NewVertex(pubkeys[0])
+		peer    = pubkeys[0]
 		node1   = route.NewVertex(pubkeys[1])
 		node2   = route.NewVertex(pubkeys[2])
 		mockErr = errors.New("mock err")
 	)
 	tests := []struct {
 		name            string
-		peer            route.Vertex
+		peer            *btcec.PublicKey
 		queryRoutesResp *lndclient.QueryRoutesResponse
 		queryRoutesErr  error
 		path            []*btcec.PublicKey
