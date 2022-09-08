@@ -25,7 +25,7 @@ var (
 
 // encodeBlindedPayload is the function signature used to encode a TLV stream
 // of blinded route data for onion messages.
-type encodeBlindedPayload func(*btcec.PublicKey) ([]byte, error)
+type encodeBlindedPayload func(*lnwire.BlindedRouteData) ([]byte, error)
 
 // createPathToBlind takes a set of public keys and creates a set of hops in
 // a blinded route. The first node in the route is considered to be the
@@ -63,9 +63,13 @@ func createPathToBlind(path []*btcec.PublicKey,
 	// in its payload so that it can unblind the route.
 	for i := 1; i < hopCount; i++ {
 		// Add this node's cleartext pubkey to the previous node's
-		// payload.
+		// data.
+		data := &lnwire.BlindedRouteData{
+			NextNodeID: path[i],
+		}
+
 		var err error
-		hopsToBlind[i-1].Payload, err = encodePayload(path[i])
+		hopsToBlind[i-1].Payload, err = encodePayload(data)
 		if err != nil {
 			return nil, fmt.Errorf("intermediate node: %v "+
 				"encoding failed: %w", i, err)
@@ -129,13 +133,9 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
 
 // encodeBlindedData encodes a TLV stream for an intermediate hop in a
 // blinded route, including only a next_node_id TLV for onion messaging.
-func encodeBlindedData(nextHop *btcec.PublicKey) ([]byte, error) {
-	if nextHop == nil {
+func encodeBlindedData(data *lnwire.BlindedRouteData) ([]byte, error) {
+	if data.NextNodeID == nil {
 		return nil, fmt.Errorf("expected non-nil next hop")
-	}
-
-	data := &lnwire.BlindedRouteData{
-		NextNodeID: nextHop,
 	}
 
 	bytes, err := lnwire.EncodeBlindedRouteData(data)
