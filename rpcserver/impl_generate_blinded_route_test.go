@@ -17,8 +17,11 @@ import (
 
 // TestGenerateBlindedRoute tests generation of blinded routes.
 func TestGenerateBlindedRoute(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 2)
+
 	path := &sphinx.BlindedPath{
-		IntroductionPoint: testutils.GetPubkeys(t, 1)[0],
+		IntroductionPoint: pubkeys[0],
+		BlindingPoint:     pubkeys[1],
 	}
 
 	tests := []struct {
