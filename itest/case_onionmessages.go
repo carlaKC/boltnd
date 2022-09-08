@@ -127,18 +127,9 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	carolB12, cleanup := bolt12Client(t, carol)
 	defer cleanup()
 
-	// Send an onion message from Carol to Bob, this time including a reply
-	// path to add coverage there.
-	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
-	routeResp, err := carolB12.GenerateBlindedRoute(
-		ctxt, &offersrpc.GenerateBlindedRouteRequest{},
-	)
-	require.NoError(t, err, "carol blinded route")
-
 	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
 	req = &offersrpc.SendOnionMessageRequest{
 		Pubkey:        net.Bob.PubKey[:],
-		ReplyPath:     routeResp.Route,
 		DirectConnect: true,
 	}
 	_, err = carolB12.SendOnionMessage(ctxt, req)
@@ -158,6 +149,35 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	require.NoError(t, err, "alice -> bob no direct connect")
 	cancel()
 
+	receiveMessage()
+	readMessage()
+
+	// Now open a channel from Carol -> Alice so that we have the following
+	// network structure:
+	// Carol --- Alice ---- Bob
+	openChannelAndAnnounce(t, net, net.Alice, carol, net.Bob)
+
+	// Generate a blinded path to Carol.
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	routeResp, err := carolB12.GenerateBlindedRoute(
+		ctxt, &offersrpc.GenerateBlindedRouteRequest{},
+	)
+	require.NoError(t, err, "carol blinded route")
+
+	// Send an onion message from Carol -> Bob including a reply path
+	// back to Carol.
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	req = &offersrpc.SendOnionMessageRequest{
+		Pubkey:        net.Bob.PubKey[:],
+		ReplyPath:     routeResp.Route,
+		DirectConnect: true,
+	}
+
+	_, err = carolB12.SendOnionMessage(ctxt, req)
+	require.NoError(t, err, "carol message")
+	cancel()
+
+	// Listen for a message from Carol -> Bob and wait to receive it.
 	receiveMessage()
 	readMessage()
 }
