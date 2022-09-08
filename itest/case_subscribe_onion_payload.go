@@ -2,10 +2,8 @@ package itest
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/testutils"
@@ -48,43 +46,11 @@ func SubscribeOnionPayload(t *testing.T, net *lntest.NetworkHarness) {
 	)
 
 	// Setup a closure that can be used to consume messages async.
-	consumeMessage := func(client offersrpc.Offers_SubscribeOnionPayloadClient) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			msg, err := client.Recv()
-			if err != nil {
-				errChan <- err
-				return
-			}
-
-			msgChan <- msg
-		}()
-	}
+	consumeMessage := consumeOnionMessage(&wg, msgChan, errChan)
 
 	// Setup a closure that will read our received message or error if
 	// nothing is received by a timeout.
-	receiveMessage := func() (*offersrpc.SubscribeOnionPayloadResponse,
-		error) {
-
-		select {
-		// If we receive a message as expected, assert that it is of
-		// the correct type.
-		case msg := <-msgChan:
-			return msg, nil
-
-		// If we received an error, something went wrong.
-		case err := <-errChan:
-			return nil, err
-
-		// In the case of a timeout, let our test exit. This will
-		// cancel the receive goroutine (through context cancelation)
-		// and wait for it to exit.
-		case <-time.After(defaultTimeout):
-			return nil, errors.New("message read timeout")
-		}
-	}
+	receiveMessage := readOnionMessage(msgChan, errChan)
 
 	// First, start with a request that is not in the correct range.
 	sub1Req := &offersrpc.SubscribeOnionPayloadRequest{
