@@ -181,12 +181,16 @@ func getRelayingPeers(ctx context.Context, lnd Lnd,
 				return nil, fmt.Errorf("get node: %w", err)
 			}
 
-			// Log that we're not found.
+			log.Debugf("Node: %x not found in graph",
+				channel.PubKeyBytes)
+
 			continue
 		}
 
 		if err := canRelay(nodeInfo); err != nil {
-			// log that we can't relay
+			log.Debugf("Node: %x can't relay onion messages: %v",
+				channel.PubKeyBytes, err)
+
 			continue
 		}
 

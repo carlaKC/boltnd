@@ -10,6 +10,7 @@ import (
 	"github.com/carlakc/boltnd/offers"
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/onionmsg"
+	"github.com/carlakc/boltnd/routes"
 	"github.com/carlakc/boltnd/rpcserver"
 	"github.com/lightninglabs/lndclient"
 	"google.golang.org/grpc"
@@ -177,4 +178,5 @@ func setupLoggers(cfg *Config) {
 	cfg.SetupLogger(rpcserver.Subsystem, rpcserver.UseLogger)
 	cfg.SetupLogger(onionmsg.Subsystem, onionmsg.UseLogger)
 	cfg.SetupLogger(offers.Subsystem, offers.UseLogger)
+	cfg.SetupLogger(routes.Subsystem, routes.UseLogger)
 }
