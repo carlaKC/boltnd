@@ -113,30 +113,7 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 
 	// We're going to open a channel between Alice and Bob, so that they
 	// become part of the public graph.
-	chanReq := lntest.OpenChannelParams{
-		Amt: 500_0000,
-	}
-
-	chanUpdates, err := net.OpenChannel(net.Alice, net.Bob, chanReq)
-	require.NoError(t, err, "open channel")
-
-	// Mine 6 blocks so that our channel will confirm.
-	_, err = net.Miner.Client.Generate(6)
-	require.NoError(t, err, "mine blocks")
-
-	channelID, err := net.WaitForChannelOpen(chanUpdates)
-	require.NoError(t, err, "alice chan open")
-
-	// Wait for all nodes to see the channel between Alice and Bob.
-	require.NoError(
-		t, net.Alice.WaitForNetworkChannelOpen(channelID), "alice wait",
-	)
-	require.NoError(
-		t, net.Bob.WaitForNetworkChannelOpen(channelID), "bob wait",
-	)
-	require.NoError(
-		t, carol.WaitForNetworkChannelOpen(channelID), "carol wait",
-	)
+	openChannelAndAnnounce(t, net, net.Alice, net.Bob, carol)
 
 	// We now have the following setup:
 	//  Alice --- (channel) ---- Bob
@@ -152,6 +129,7 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 
 	// Send an onion message from Carol to Bob, this time including a reply
 	// path to add coverage there.
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
 	routeResp, err := carolB12.GenerateBlindedRoute(
 		ctxt, &offersrpc.GenerateBlindedRouteRequest{},
 	)
