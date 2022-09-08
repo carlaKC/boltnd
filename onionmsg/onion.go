@@ -7,7 +7,9 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/carlakc/boltnd/lnwire"
+	"github.com/lightninglabs/lndclient"
 	sphinx "github.com/lightningnetwork/lightning-onion"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 var (
@@ -146,20 +148,10 @@ func encodeBlindedData(nextHop *btcec.PublicKey) ([]byte, error) {
 
 // createOnionMessage creates an onion message, blinding the nodes in the path
 // provided and including relevant TLVs for blinded relay of messages.
-func createOnionMessage(path []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
-	finalPayloads []*lnwire.FinalHopPayload, sessionKey,
-	blindingKey *btcec.PrivateKey) (*lnwire.OnionMessage, error) {
-
-	hopCount := len(path)
-	if hopCount < 1 {
-		return nil, fmt.Errorf("blinded path must have at least 1 hop")
-	}
-
-	// Create a blinded path.
-	hops, err := createPathToBlind(path, encodeBlindedData)
-	if err != nil {
-		return nil, fmt.Errorf("path to blind: %w", err)
-	}
+func createOnionMessage(hops []*sphinx.BlindedPathHop,
+	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
+	sessionKey, blindingKey *btcec.PrivateKey) (*lnwire.OnionMessage,
+	error) {
 
 	// Create a blinded route from our set of hops, encrypting blobs and
 	// blinding node keys as required.
@@ -168,7 +160,9 @@ func createOnionMessage(path []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
 		return nil, fmt.Errorf("blinded path: %w", err)
 	}
 
-	sphinxPath, err := blindedToSphinx(blindedPath, replyPath, finalPayloads)
+	sphinxPath, err := blindedToSphinx(
+		blindedPath, replyPath, finalPayloads,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create sphinx path: %w", err)
 	}
@@ -190,6 +184,23 @@ func createOnionMessage(path []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
 	return lnwire.NewOnionMessage(
 		blindedPath.BlindingPoint, buf.Bytes(),
 	), nil
+}
+
+// customOnionMessage encodes the onion message provided and wraps it in a
+// lnd custom message so that it can be sent to peers via external apis.
+func customOnionMessage(peer *btcec.PublicKey,
+	msg *lnwire.OnionMessage) (*lndclient.CustomMessage, error) {
+
+	buf := new(bytes.Buffer)
+	if err := msg.Encode(buf, 0); err != nil {
+		return nil, fmt.Errorf("onion message encode: %w", err)
+	}
+
+	return &lndclient.CustomMessage{
+		Peer:    route.NewVertex(peer),
+		MsgType: lnwire.OnionMessageType,
+		Data:    buf.Bytes(),
+	}, nil
 }
 
 // decryptBlobFunc returns a closure that can be used to decrypt an onion

@@ -422,18 +422,23 @@ func mockMessageHandled(m *mock.Mock, path *lnwire.ReplyPath, data,
 // TestHandleOnionMessage tests different handling cases for onion messages.
 func TestHandleOnionMessage(t *testing.T) {
 	pubkeys := testutils.GetPubkeys(t, 3)
-	nodeKey := route.NewVertex(pubkeys[0])
-	path := []*btcec.PublicKey{
-		pubkeys[0],
+	nodeKey := pubkeys[0]
+	hops := []*sphinx.BlindedPathHop{
+		{
+			NodePub: pubkeys[0],
+		},
 	}
 
 	privKeys := testutils.GetPrivkeys(t, 2)
 
 	// Create a single valid message that we can use across test cases.
-	msg, err := customOnionMessage(
-		privKeys[0], privKeys[1], nodeKey, path, nil, nil,
+	onionMsg, err := createOnionMessage(
+		hops, nil, nil, privKeys[0], privKeys[1],
 	)
-	require.NoError(t, err, "create msg")
+	require.NoError(t, err, "onion message")
+
+	msg, err := customOnionMessage(nodeKey, onionMsg)
+	require.NoError(t, err, "custom message")
 
 	mockErr := errors.New("mock err")
 
@@ -751,15 +756,13 @@ func TestReceiveOnionMessages(t *testing.T) {
 	privkeys := testutils.GetPrivkeys(t, 2)
 
 	// Create an onion message that is *to our node* that we can use
-	// across tests.
+	// across tests. The message itself can be junk, because we're not
+	// reading it in this test.
 	nodePubkey := privkeys[0].PubKey()
-	nodeVertex := route.NewVertex(nodePubkey)
-	path := []*btcec.PublicKey{
-		nodePubkey,
-	}
+	onionMsg := lnwire.NewOnionMessage(nodePubkey, []byte{1, 2, 3})
 
 	msg, err := customOnionMessage(
-		privkeys[0], privkeys[1], nodeVertex, path, nil, nil,
+		nodePubkey, onionMsg,
 	)
 	require.NoError(t, err, "custom message")
 

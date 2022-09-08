@@ -371,14 +371,27 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		req.Peer.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
-	// Create a custom onion message that we will send to the first node in
-	// our path.
-	msg, err := customOnionMessage(
-		sessionKey, blindingKey, route.NewVertex(path[0]), path,
-		req.ReplyPath, req.FinalPayloads,
+	// Create a set of hops and corresponding blobs to be encrypted which
+	// form the route for our blinded path.
+	hops, err := createPathToBlind(path, encodeBlindedData)
+	if err != nil {
+		return fmt.Errorf("path to blind: %w", err)
+	}
+
+	// Combine our onion hops with the reply path and payloads for the
+	// recipient to create an onion message.
+	onionMsg, err := createOnionMessage(
+		hops, req.ReplyPath, req.FinalPayloads, sessionKey, blindingKey,
 	)
 	if err != nil {
-		return fmt.Errorf("could not create message: %w", err)
+		return fmt.Errorf("could not create onion message: %w", err)
+	}
+
+	// Finally, convert this onion message to a custom message so that we
+	// can sent it via lnd's custom message API.
+	msg, err := customOnionMessage(req.Peer, onionMsg)
+	if err != nil {
+		return fmt.Errorf("could not create custom message: %w", err)
 	}
 
 	return m.lnd.SendCustomMessage(ctx, *msg)
@@ -515,34 +528,6 @@ func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer *btcec.PublicKey) (
 	default:
 		return nil, fmt.Errorf("query routes failed: %w", err)
 	}
-}
-
-// customOnionMessage creates an onion message to our peer and wraps it in
-// a custom lnd message.
-func customOnionMessage(sessionKey, blindingKey *btcec.PrivateKey,
-	peer route.Vertex, path []*btcec.PublicKey,
-	replyPath *lnwire.ReplyPath,
-	finalPayloads []*lnwire.FinalHopPayload) (*lndclient.CustomMessage,
-	error) {
-
-	// Create and encode an onion message.
-	msg, err := createOnionMessage(
-		path, replyPath, finalPayloads, sessionKey, blindingKey,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("onion message creation failed: %v", err)
-	}
-
-	buf := new(bytes.Buffer)
-	if err := msg.Encode(buf, 0); err != nil {
-		return nil, fmt.Errorf("onion message encode: %w", err)
-	}
-
-	return &lndclient.CustomMessage{
-		Peer:    peer,
-		MsgType: lnwire.OnionMessageType,
-		Data:    buf.Bytes(),
-	}, nil
 }
 
 // manageOnionMessages consumes onion messages from lnd's custom message
