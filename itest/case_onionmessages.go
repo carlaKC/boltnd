@@ -113,30 +113,7 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 
 	// We're going to open a channel between Alice and Bob, so that they
 	// become part of the public graph.
-	chanReq := lntest.OpenChannelParams{
-		Amt: 500_0000,
-	}
-
-	chanUpdates, err := net.OpenChannel(net.Alice, net.Bob, chanReq)
-	require.NoError(t, err, "open channel")
-
-	// Mine 6 blocks so that our channel will confirm.
-	_, err = net.Miner.Client.Generate(6)
-	require.NoError(t, err, "mine blocks")
-
-	channelID, err := net.WaitForChannelOpen(chanUpdates)
-	require.NoError(t, err, "alice chan open")
-
-	// Wait for all nodes to see the channel between Alice and Bob.
-	require.NoError(
-		t, net.Alice.WaitForNetworkChannelOpen(channelID), "alice wait",
-	)
-	require.NoError(
-		t, net.Bob.WaitForNetworkChannelOpen(channelID), "bob wait",
-	)
-	require.NoError(
-		t, carol.WaitForNetworkChannelOpen(channelID), "carol wait",
-	)
+	openChannelAndAnnounce(t, net, net.Alice, net.Bob, carol)
 
 	// We now have the following setup:
 	//  Alice --- (channel) ---- Bob
@@ -150,17 +127,9 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	carolB12, cleanup := bolt12Client(t, carol)
 	defer cleanup()
 
-	// Send an onion message from Carol to Bob, this time including a reply
-	// path to add coverage there.
-	routeResp, err := carolB12.GenerateBlindedRoute(
-		ctxt, &offersrpc.GenerateBlindedRouteRequest{},
-	)
-	require.NoError(t, err, "carol blinded route")
-
 	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
 	req = &offersrpc.SendOnionMessageRequest{
 		Pubkey:        net.Bob.PubKey[:],
-		ReplyPath:     routeResp.Route,
 		DirectConnect: true,
 	}
 	_, err = carolB12.SendOnionMessage(ctxt, req)
@@ -180,6 +149,35 @@ func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	require.NoError(t, err, "alice -> bob no direct connect")
 	cancel()
 
+	receiveMessage()
+	readMessage()
+
+	// Now open a channel from Carol -> Alice so that we have the following
+	// network structure:
+	// Carol --- Alice ---- Bob
+	openChannelAndAnnounce(t, net, net.Alice, carol, net.Bob)
+
+	// Generate a blinded path to Carol.
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	routeResp, err := carolB12.GenerateBlindedRoute(
+		ctxt, &offersrpc.GenerateBlindedRouteRequest{},
+	)
+	require.NoError(t, err, "carol blinded route")
+
+	// Send an onion message from Carol -> Bob including a reply path
+	// back to Carol.
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	req = &offersrpc.SendOnionMessageRequest{
+		Pubkey:        net.Bob.PubKey[:],
+		ReplyPath:     routeResp.Route,
+		DirectConnect: true,
+	}
+
+	_, err = carolB12.SendOnionMessage(ctxt, req)
+	require.NoError(t, err, "carol message")
+	cancel()
+
+	// Listen for a message from Carol -> Bob and wait to receive it.
 	receiveMessage()
 	readMessage()
 }

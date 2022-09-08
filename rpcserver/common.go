@@ -79,20 +79,25 @@ func composeReplyPath(resp *lnwire.ReplyPath) *offersrpc.BlindedPath {
 	return blindedPath
 }
 
+// composeBlindedRoute converts a sphinx blinded path to our rpc blinded path.
+// This function assumes that each node in the blinded path has some encrypted
+// data associated with it.
 func composeBlindedRoute(route *sphinx.BlindedPath) *offersrpc.BlindedPath {
 	rpcRoute := &offersrpc.BlindedPath{
 		IntroductionNode: route.IntroductionPoint.SerializeCompressed(),
+		BlindingPoint:    route.BlindingPoint.SerializeCompressed(),
 	}
 
-	if len(route.EncryptedData) > 0 {
-		rpcRoute.IntroductionEncryptedData = route.EncryptedData[0]
-	}
+	for i := 0; i < len(route.BlindedHops); i++ {
+		if i == 0 {
+			rpcRoute.IntroductionEncryptedData = route.EncryptedData[i]
+			continue
+		}
 
-	for i := 1; i < len(route.BlindedHops); i++ {
-		rpcRoute.Hops[i] = &offersrpc.BlindedHop{
+		rpcRoute.Hops = append(rpcRoute.Hops, &offersrpc.BlindedHop{
 			BlindedNodeId: route.BlindedHops[i].SerializeCompressed(),
 			EncryptedData: route.EncryptedData[i],
-		}
+		})
 	}
 
 	return rpcRoute
