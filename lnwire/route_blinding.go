@@ -10,12 +10,19 @@ import (
 const (
 	// nextNodeType is a record type for the unblinded next node ID.
 	nextNodeType tlv.Type = 4
+
+	// nextBlindingOverride is a record type containing a blinding override.
+	nextBlindingOverride tlv.Type = 8
 )
 
 // BlindedRouteData holds the fields that we encrypt in route blinding blobs.
 type BlindedRouteData struct {
 	// NextNodeID is the unblinded node id of the next hop in the route.
 	NextNodeID *btcec.PublicKey
+
+	// NextBlindingOverride is an optional blinding override used to switch
+	// out ephemeral keys.
+	NextBlindingOverride *btcec.PublicKey
 }
 
 // EncodeBlindedRouteData encodes a blinded route tlv stream.
@@ -29,6 +36,13 @@ func EncodeBlindedRouteData(data *BlindedRouteData) ([]byte, error) {
 			nextNodeType, &data.NextNodeID,
 		)
 		records = append(records, nodeIDRecord)
+	}
+
+	if data.NextBlindingOverride != nil {
+		overrideRecord := tlv.MakePrimitiveRecord(
+			nextBlindingOverride, &data.NextBlindingOverride,
+		)
+		records = append(records, overrideRecord)
 	}
 
 	stream, err := tlv.NewStream(records...)
@@ -51,6 +65,9 @@ func DecodeBlindedRouteData(data []byte) (*BlindedRouteData, error) {
 
 	records := []tlv.Record{
 		tlv.MakePrimitiveRecord(nextNodeType, &routeData.NextNodeID),
+		tlv.MakePrimitiveRecord(
+			nextBlindingOverride, &routeData.NextBlindingOverride,
+		),
 	}
 
 	stream, err := tlv.NewStream(records...)
