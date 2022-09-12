@@ -18,30 +18,29 @@ service Offers {
 }
 
 message SendOnionMessageRequest {
-    // The pubkey of the peer to send the message to. As currently implemented
-    // the server will make an ad-hoc connection to the peer (if not already
-    // connected) to deliver the message.
-    //
-    // NB: This will reveal your IP address if you are not running tor. In
-    // future iterations this API will find a route to the peer and send the
-    // message along a blinded path, protecting sender identity.
+    // The pubkey of the peer to send the message to. This field must not be
+    // set if blinded destination is populated.
     bytes pubkey = 1;
+
+    // A blinded path to the target recipient of the onion message. This field
+    // must not be set if pubkey is populated.
+    BlindedPath blinded_destination = 2;
 
     // A map of TLV type to encoded value to deliver to the target node. Note
     // that the bytes for each payload will be written directly, so should
     // already be encoded as the recipient is expecting. TLVs >= 64 are
     // reserved for the final hop, so all values in the map must be in this
     // in this range.
-    map<uint64, bytes> final_payloads = 2;
+    map<uint64, bytes> final_payloads = 3;
 
     // An optional blinded path that can be used to supply the recipient with
     // a path to send replies over.
-    BlindedPath reply_path = 3;
+    BlindedPath reply_path = 4;
 
     // If we cannot find a path to the node pubkey provided, there is an option
     // to make a direct p2p connection to the node to deliver onion messages.
     // This option will leak the IP of your LND node, so it is opt-in.
-    bool direct_connect = 4;
+    bool direct_connect = 5;
 }
 
 message BlindedPath {

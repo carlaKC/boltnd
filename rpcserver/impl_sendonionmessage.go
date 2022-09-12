@@ -57,11 +57,43 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 	*onionmsg.SendMessageRequest, error) {
 
-	pubkey, err := btcec.ParsePubKey(req.Pubkey)
-	if err != nil {
+	var (
+		pubkeySet  = len(req.Pubkey) != 0
+		blindedSet = req.BlindedDestination != nil
+
+		pubkey      *btcec.PublicKey
+		blindedDest *lnwire.ReplyPath
+		err         error
+	)
+
+	switch {
+	case pubkeySet && blindedSet:
 		return nil, status.Errorf(
-			codes.InvalidArgument, "peer pubkey: %v", err,
+			codes.InvalidArgument, "set either pubkey or blinded,"+
+				"not both",
 		)
+	case !(pubkeySet || blindedSet):
+		return nil, status.Errorf(
+			codes.InvalidArgument, "pubkey or blinded required",
+		)
+
+	case pubkeySet:
+		pubkey, err = btcec.ParsePubKey(req.Pubkey)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.InvalidArgument, "peer pubkey: %v",
+				err.Error(),
+			)
+		}
+
+	case blindedSet:
+		blindedDest, err = parseReplyPath(req.BlindedDestination)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.InvalidArgument, "blinded dest: %v",
+				err.Error(),
+			)
+		}
 	}
 
 	replyPath, err := parseReplyPath(req.ReplyPath)
@@ -89,7 +121,8 @@ func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 	}
 
 	onionReq := onionmsg.NewSendMessageRequest(
-		pubkey, nil, replyPath, finalHopPayloads, req.DirectConnect,
+		pubkey, blindedDest, replyPath, finalHopPayloads,
+		req.DirectConnect,
 	)
 
 	// Validate the request so that we can send a specific error code for
