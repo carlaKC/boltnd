@@ -12,15 +12,35 @@ import (
 func TestRouteBlindingEncoding(t *testing.T) {
 	pubkeys := testutils.GetPubkeys(t, 1)
 
-	original := &BlindedRouteData{
-		NextNodeID: pubkeys[0],
+	tests := []struct {
+		name string
+		data *BlindedRouteData
+	}{
+		{
+			name: "node id",
+			data: &BlindedRouteData{
+				NextNodeID: pubkeys[0],
+			},
+		},
+		{
+			name: "blinding override",
+			data: &BlindedRouteData{
+				NextBlindingOverride: pubkeys[0],
+			},
+		},
 	}
 
-	bytes, err := EncodeBlindedRouteData(original)
-	require.NoError(t, err, "encode data")
+	for _, testCase := range tests {
+		testCase := testCase
 
-	actual, err := DecodeBlindedRouteData(bytes)
-	require.NoError(t, err, "decode data")
+		t.Run(testCase.name, func(t *testing.T) {
+			bytes, err := EncodeBlindedRouteData(testCase.data)
+			require.NoError(t, err, "encode data")
 
-	require.Equal(t, original, actual)
+			actual, err := DecodeBlindedRouteData(bytes)
+			require.NoError(t, err, "decode data")
+
+			require.Equal(t, testCase.data, actual)
+		})
+	}
 }
