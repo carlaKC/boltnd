@@ -310,6 +310,13 @@ type SendMessageRequest struct {
 	DirectConnect bool
 }
 
+// targetPeer returns the peer that we need to find a route to for an onion
+// message. This may not be the peer the message is ultimately delivered to
+// because we could be sending to an introduction node in a blinded path.
+func (s *SendMessageRequest) targetPeer() *btcec.PublicKey {
+	return s.Peer
+}
+
 // NewSendMessageRequest creates an onion message request.
 func NewSendMessageRequest(destination *btcec.PublicKey,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
@@ -343,20 +350,24 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
-	var path []*btcec.PublicKey
+	var (
+		path []*btcec.PublicKey
+		peer = req.targetPeer()
+	)
+
 	if !req.DirectConnect {
-		path, err = multiHopPath(ctx, m.lnd, req.Peer)
+		path, err = multiHopPath(ctx, m.lnd, peer)
 		if err != nil {
 			return fmt.Errorf("could not find path to %v: %w",
-				req.Peer, err)
+				peer, err)
 		}
 	} else {
-		if err := m.lookupAndConnect(ctx, req.Peer); err != nil {
+		if err := m.lookupAndConnect(ctx, peer); err != nil {
 			return fmt.Errorf("lookup and connect: %w", err)
 		}
 
 		path = []*btcec.PublicKey{
-			req.Peer,
+			peer,
 		}
 	}
 
@@ -364,11 +375,11 @@ func (m *Messenger) SendMessage(ctx context.Context,
 	// pass for direct connect, but may fail for multi-hop if no route was
 	// found).
 	if len(path) == 0 {
-		return fmt.Errorf("%w: %v", ErrNoPath, req.Peer)
+		return fmt.Errorf("%w: %v", ErrNoPath, peer)
 	}
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
-		req.Peer.SerializeCompressed(),
+		peer.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
 	// Create a set of hops and corresponding blobs to be encrypted which
@@ -389,7 +400,7 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Finally, convert this onion message to a custom message so that we
 	// can sent it via lnd's custom message API.
-	msg, err := customOnionMessage(req.Peer, onionMsg)
+	msg, err := customOnionMessage(path[0], onionMsg)
 	if err != nil {
 		return fmt.Errorf("could not create custom message: %w", err)
 	}
