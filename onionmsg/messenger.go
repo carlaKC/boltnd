@@ -678,6 +678,16 @@ func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
 		return fmt.Errorf("could not calculate next ephemeral: %w", err)
 	}
 
+	// If we have a blinding override included in our encrypted data, it
+	// should be directly switched out.
+	if data.NextBlindingOverride != nil {
+		log.Infof("Ephemeral switch out: %x for %x",
+			blindingPoint.SerializeCompressed(),
+			data.NextBlindingOverride.SerializeCompressed())
+
+		nextBlinding = data.NextBlindingOverride
+	}
+
 	buf := new(bytes.Buffer)
 	if err := onionPacket.Encode(buf); err != nil {
 		return fmt.Errorf("could not encode packet: %w", err)
