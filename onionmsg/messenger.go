@@ -291,14 +291,45 @@ func (m *Messenger) handleRegistration(request *registerHandler,
 	}
 }
 
+// SendMessageRequest contains the request parameters for sending an onion
+// message.
+type SendMessageRequest struct {
+	// Peer is the destination that we are sending the message to.
+	Peer *btcec.PublicKey
+
+	// ReplyPath is an optional reply path to our own node, included to
+	// allow the recipient to reply to the message.
+	ReplyPath *lnwire.ReplyPath
+
+	// FinalHopPayloads is a set of tlv types / values to include in the
+	// payload for the final hop.
+	FinalPayloads []*lnwire.FinalHopPayload
+
+	// DirectConnect indicates whether we should make a direct p2p
+	// connection to the target node.
+	DirectConnect bool
+}
+
+// NewSendMessageRequest creates an onion message request.
+func NewSendMessageRequest(destination *btcec.PublicKey,
+	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
+	directConnect bool) *SendMessageRequest {
+
+	return &SendMessageRequest{
+		Peer:          destination,
+		ReplyPath:     replyPath,
+		FinalPayloads: finalPayloads,
+		DirectConnect: directConnect,
+	}
+}
+
 // SendMessage sends an onion message to the peer provided. The message can
 // optionally include a reply path for the recipient to use for replies and
 // payloads for the final hop. If we cannot find a path to the peer and the
 // direct connect param is true, we will make a direct connection to the peer
 // to send the message.
-func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
-	replyPath *lnwire.ReplyPath, finalHopPayloads []*lnwire.FinalHopPayload,
-	directConnect bool) error {
+func (m *Messenger) SendMessage(ctx context.Context,
+	req *SendMessageRequest) error {
 
 	sessionKey, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -310,27 +341,22 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 		return fmt.Errorf("could not get blinding key: %w", err)
 	}
 
-	peerPubkey, err := btcec.ParsePubKey(peer[:])
-	if err != nil {
-		return fmt.Errorf("could not parse peer key: %w", err)
-	}
-
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
 	var path []*btcec.PublicKey
-	if !directConnect {
-		path, err = multiHopPath(ctx, m.lnd, peer)
+	if !req.DirectConnect {
+		path, err = multiHopPath(ctx, m.lnd, req.Peer)
 		if err != nil {
 			return fmt.Errorf("could not find path to %v: %w",
-				peer, err)
+				req.Peer, err)
 		}
 	} else {
-		if err := m.lookupAndConnect(ctx, peer); err != nil {
+		if err := m.lookupAndConnect(ctx, req.Peer); err != nil {
 			return fmt.Errorf("lookup and connect: %w", err)
 		}
 
 		path = []*btcec.PublicKey{
-			peerPubkey,
+			req.Peer,
 		}
 	}
 
@@ -338,21 +364,34 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 	// pass for direct connect, but may fail for multi-hop if no route was
 	// found).
 	if len(path) == 0 {
-		return fmt.Errorf("%w: %v", ErrNoPath, peer)
+		return fmt.Errorf("%w: %v", ErrNoPath, req.Peer)
 	}
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
-		peerPubkey.SerializeCompressed(),
+		req.Peer.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
-	// Create a custom onion message that we will send to the first node in
-	// our path.
-	msg, err := customOnionMessage(
-		sessionKey, blindingKey, route.NewVertex(path[0]), path,
-		replyPath, finalHopPayloads,
+	// Create a set of hops and corresponding blobs to be encrypted which
+	// form the route for our blinded path.
+	hops, err := createPathToBlind(path, encodeBlindedData)
+	if err != nil {
+		return fmt.Errorf("path to blind: %w", err)
+	}
+
+	// Combine our onion hops with the reply path and payloads for the
+	// recipient to create an onion message.
+	onionMsg, err := createOnionMessage(
+		hops, req.ReplyPath, req.FinalPayloads, sessionKey, blindingKey,
 	)
 	if err != nil {
-		return fmt.Errorf("could not create message: %w", err)
+		return fmt.Errorf("could not create onion message: %w", err)
+	}
+
+	// Finally, convert this onion message to a custom message so that we
+	// can sent it via lnd's custom message API.
+	msg, err := customOnionMessage(req.Peer, onionMsg)
+	if err != nil {
+		return fmt.Errorf("could not create custom message: %w", err)
 	}
 
 	return m.lnd.SendCustomMessage(ctx, *msg)
@@ -361,7 +400,7 @@ func (m *Messenger) SendMessage(ctx context.Context, peer route.Vertex,
 // lookupAndConnect checks whether we have a connection with a peer, and  looks
 // it up in the graph and makes a connection if we're not already connected.
 func (m *Messenger) lookupAndConnect(ctx context.Context,
-	peer route.Vertex) error {
+	peer *btcec.PublicKey) error {
 
 	// If we're already peered with the node, exit early.
 	isPeer, err := m.findPeer(ctx, peer)
@@ -373,7 +412,8 @@ func (m *Messenger) lookupAndConnect(ctx context.Context,
 		return nil
 	}
 
-	info, err := m.lnd.GetNodeInfo(ctx, peer, false)
+	vertex := route.NewVertex(peer)
+	info, err := m.lnd.GetNodeInfo(ctx, vertex, false)
 	if err != nil {
 		return fmt.Errorf("could not lookup node: %w", err)
 	}
@@ -384,7 +424,7 @@ func (m *Messenger) lookupAndConnect(ctx context.Context,
 
 	// Make a permanent connection to the peer so that they don't get
 	// pruned because we don't have a channel with them.
-	err = m.lnd.Connect(ctx, peer, info.Addresses[0], true)
+	err = m.lnd.Connect(ctx, vertex, info.Addresses[0], true)
 	if err != nil {
 		return fmt.Errorf("could not connect to peer: %w", err)
 	}
@@ -415,7 +455,7 @@ func (m *Messenger) lookupAndConnect(ctx context.Context,
 }
 
 // findPeer looks for a peer's pubkey in our list of online peers.
-func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
+func (m *Messenger) findPeer(ctx context.Context, peer *btcec.PublicKey) (bool,
 	error) {
 
 	peers, err := m.lnd.ListPeers(ctx)
@@ -425,7 +465,7 @@ func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
 
 	// If we're already peers, we can just return early.
 	for _, currentPeer := range peers {
-		if currentPeer.Pubkey == peer {
+		if currentPeer.Pubkey == route.NewVertex(peer) {
 			return true, nil
 		}
 	}
@@ -435,9 +475,9 @@ func (m *Messenger) findPeer(ctx context.Context, peer route.Vertex) (bool,
 
 // queryRoutesRequest creates a query routes request for finding onion message
 // multi-hop paths.
-func queryRoutesRequest(peer route.Vertex) lndclient.QueryRoutesRequest {
+func queryRoutesRequest(peer *btcec.PublicKey) lndclient.QueryRoutesRequest {
 	return lndclient.QueryRoutesRequest{
-		PubKey: peer,
+		PubKey: route.NewVertex(peer),
 		// We disable mission control because we don't care about
 		// the liquidity in these channels, just that they exist.
 		UseMissionControl: false,
@@ -459,7 +499,7 @@ func queryRoutesRequest(peer route.Vertex) lndclient.QueryRoutesRequest {
 //
 // TODO: Replace use of query routes with a graph walk, this is a lazy drop-in
 // solution to get onion messaging paths based on the channel graph.
-func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer route.Vertex) (
+func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer *btcec.PublicKey) (
 	[]*btcec.PublicKey, error) {
 
 	resp, err := lnd.QueryRoutes(ctx, queryRoutesRequest(peer))
@@ -488,34 +528,6 @@ func multiHopPath(ctx context.Context, lnd LndOnionMsg, peer route.Vertex) (
 	default:
 		return nil, fmt.Errorf("query routes failed: %w", err)
 	}
-}
-
-// customOnionMessage creates an onion message to our peer and wraps it in
-// a custom lnd message.
-func customOnionMessage(sessionKey, blindingKey *btcec.PrivateKey,
-	peer route.Vertex, path []*btcec.PublicKey,
-	replyPath *lnwire.ReplyPath,
-	finalPayloads []*lnwire.FinalHopPayload) (*lndclient.CustomMessage,
-	error) {
-
-	// Create and encode an onion message.
-	msg, err := createOnionMessage(
-		path, replyPath, finalPayloads, sessionKey, blindingKey,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("onion message creation failed: %v", err)
-	}
-
-	buf := new(bytes.Buffer)
-	if err := msg.Encode(buf, 0); err != nil {
-		return nil, fmt.Errorf("onion message encode: %w", err)
-	}
-
-	return &lndclient.CustomMessage{
-		Peer:    peer,
-		MsgType: lnwire.OnionMessageType,
-		Data:    buf.Bytes(),
-	}, nil
 }
 
 // manageOnionMessages consumes onion messages from lnd's custom message

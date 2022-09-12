@@ -7,7 +7,9 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/carlakc/boltnd/lnwire"
+	"github.com/lightninglabs/lndclient"
 	sphinx "github.com/lightningnetwork/lightning-onion"
+	"github.com/lightningnetwork/lnd/routing/route"
 )
 
 var (
@@ -23,7 +25,7 @@ var (
 
 // encodeBlindedPayload is the function signature used to encode a TLV stream
 // of blinded route data for onion messages.
-type encodeBlindedPayload func(*btcec.PublicKey) ([]byte, error)
+type encodeBlindedPayload func(*lnwire.BlindedRouteData) ([]byte, error)
 
 // createPathToBlind takes a set of public keys and creates a set of hops in
 // a blinded route. The first node in the route is considered to be the
@@ -61,9 +63,13 @@ func createPathToBlind(path []*btcec.PublicKey,
 	// in its payload so that it can unblind the route.
 	for i := 1; i < hopCount; i++ {
 		// Add this node's cleartext pubkey to the previous node's
-		// payload.
+		// data.
+		data := &lnwire.BlindedRouteData{
+			NextNodeID: path[i],
+		}
+
 		var err error
-		hopsToBlind[i-1].Payload, err = encodePayload(path[i])
+		hopsToBlind[i-1].Payload, err = encodePayload(data)
 		if err != nil {
 			return nil, fmt.Errorf("intermediate node: %v "+
 				"encoding failed: %w", i, err)
@@ -127,13 +133,9 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
 
 // encodeBlindedData encodes a TLV stream for an intermediate hop in a
 // blinded route, including only a next_node_id TLV for onion messaging.
-func encodeBlindedData(nextHop *btcec.PublicKey) ([]byte, error) {
-	if nextHop == nil {
+func encodeBlindedData(data *lnwire.BlindedRouteData) ([]byte, error) {
+	if data.NextNodeID == nil {
 		return nil, fmt.Errorf("expected non-nil next hop")
-	}
-
-	data := &lnwire.BlindedRouteData{
-		NextNodeID: nextHop,
 	}
 
 	bytes, err := lnwire.EncodeBlindedRouteData(data)
@@ -146,20 +148,10 @@ func encodeBlindedData(nextHop *btcec.PublicKey) ([]byte, error) {
 
 // createOnionMessage creates an onion message, blinding the nodes in the path
 // provided and including relevant TLVs for blinded relay of messages.
-func createOnionMessage(path []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
-	finalPayloads []*lnwire.FinalHopPayload, sessionKey,
-	blindingKey *btcec.PrivateKey) (*lnwire.OnionMessage, error) {
-
-	hopCount := len(path)
-	if hopCount < 1 {
-		return nil, fmt.Errorf("blinded path must have at least 1 hop")
-	}
-
-	// Create a blinded path.
-	hops, err := createPathToBlind(path, encodeBlindedData)
-	if err != nil {
-		return nil, fmt.Errorf("path to blind: %w", err)
-	}
+func createOnionMessage(hops []*sphinx.BlindedPathHop,
+	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
+	sessionKey, blindingKey *btcec.PrivateKey) (*lnwire.OnionMessage,
+	error) {
 
 	// Create a blinded route from our set of hops, encrypting blobs and
 	// blinding node keys as required.
@@ -168,7 +160,9 @@ func createOnionMessage(path []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
 		return nil, fmt.Errorf("blinded path: %w", err)
 	}
 
-	sphinxPath, err := blindedToSphinx(blindedPath, replyPath, finalPayloads)
+	sphinxPath, err := blindedToSphinx(
+		blindedPath, replyPath, finalPayloads,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create sphinx path: %w", err)
 	}
@@ -190,6 +184,23 @@ func createOnionMessage(path []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
 	return lnwire.NewOnionMessage(
 		blindedPath.BlindingPoint, buf.Bytes(),
 	), nil
+}
+
+// customOnionMessage encodes the onion message provided and wraps it in a
+// lnd custom message so that it can be sent to peers via external apis.
+func customOnionMessage(peer *btcec.PublicKey,
+	msg *lnwire.OnionMessage) (*lndclient.CustomMessage, error) {
+
+	buf := new(bytes.Buffer)
+	if err := msg.Encode(buf, 0); err != nil {
+		return nil, fmt.Errorf("onion message encode: %w", err)
+	}
+
+	return &lndclient.CustomMessage{
+		Peer:    route.NewVertex(peer),
+		MsgType: lnwire.OnionMessageType,
+		Data:    buf.Bytes(),
+	}, nil
 }
 
 // decryptBlobFunc returns a closure that can be used to decrypt an onion

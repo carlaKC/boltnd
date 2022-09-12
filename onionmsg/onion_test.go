@@ -14,8 +14,8 @@ import (
 
 // mockedPayloadEncode is a mocked encode function for blinded hop paylaods
 // which just returns the compressed serialization of the public key provided.
-func mockedPayloadEncode(pk *btcec.PublicKey) ([]byte, error) {
-	return pk.SerializeCompressed(), nil
+func mockedPayloadEncode(data *lnwire.BlindedRouteData) ([]byte, error) {
+	return data.NextNodeID.SerializeCompressed(), nil
 }
 
 // TestCreatePathToBlind tests formation of blinded route paths from a set of

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/carlakc/boltnd/lnwire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -63,10 +62,7 @@ type OnionMessenger interface {
 
 	// SendMessage sends an onion message to the peer specified. A set of
 	// optional TLVs for the target peer can be included in final payloads.
-	SendMessage(ctx context.Context, peer route.Vertex,
-		replyPath *lnwire.ReplyPath,
-		finalPayloads []*lnwire.FinalHopPayload,
-		directConenct bool) error
+	SendMessage(ctx context.Context, req *SendMessageRequest) error
 
 	// RegisterHandler adds a handler onion message payloads delivered to
 	// our node for the tlv type provided.

@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/onionmsg"
-	"github.com/lightningnetwork/lnd/routing/route"
 	"github.com/lightningnetwork/lnd/tlv"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,9 +29,10 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 		return nil, err
 	}
 
-	err = s.onionMsgr.SendMessage(
-		ctx, pubkey, replyPath, finalHop, req.DirectConnect,
+	onionReq := onionmsg.NewSendMessageRequest(
+		pubkey, replyPath, finalHop, req.DirectConnect,
 	)
+	err = s.onionMsgr.SendMessage(ctx, onionReq)
 	switch {
 	// If we got a no path error, prompt user to try direct connect if
 	// they want to.
@@ -57,18 +58,18 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 // by SendOnionMessageRequest. All errors returned *must* include a grpc status
 // code.
 func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
-	route.Vertex, *lnwire.ReplyPath, []*lnwire.FinalHopPayload, error) {
+	*btcec.PublicKey, *lnwire.ReplyPath, []*lnwire.FinalHopPayload, error) {
 
-	pubkey, err := route.NewVertexFromBytes(req.Pubkey)
+	pubkey, err := btcec.ParsePubKey(req.Pubkey)
 	if err != nil {
-		return route.Vertex{}, nil, nil, status.Errorf(
+		return nil, nil, nil, status.Errorf(
 			codes.InvalidArgument, "peer pubkey: %v", err,
 		)
 	}
 
 	replyPath, err := parseReplyPath(req.ReplyPath)
 	if err != nil {
-		return route.Vertex{}, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// If we have no final payloads, just return nil (this makes it easier
@@ -88,7 +89,7 @@ func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 		}
 
 		if err := finalPayload.Validate(); err != nil {
-			return route.Vertex{}, nil, nil, status.Errorf(
+			return nil, nil, nil, status.Errorf(
 				codes.InvalidArgument, err.Error(),
 			)
 		}
