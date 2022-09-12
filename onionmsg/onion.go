@@ -243,6 +243,9 @@ func createOnionMessage(hops []*sphinx.BlindedPathHop, extraHops []*blindedHop,
 		return nil, fmt.Errorf("onion packet encode: %w", err)
 	}
 
+	// TODO - if len(hops) = 1, we need to switch out the ephemeral key
+	// somehow?
+
 	return lnwire.NewOnionMessage(
 		blindedPath.BlindingPoint, buf.Bytes(),
 	), nil
