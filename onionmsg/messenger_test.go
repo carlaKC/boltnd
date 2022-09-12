@@ -317,11 +317,12 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 	messenger.lookupPeerBackoff = 0
 
 	ctxb := context.Background()
-	req := NewSendMessageRequest(
-		testCase.peer, nil, nil, testCase.directConnect,
+	req, err := NewSendMessageRequest(
+		testCase.peer, nil, nil, nil, testCase.directConnect,
 	)
+	require.NoError(t, err, "message request")
 
-	err := messenger.SendMessage(ctxb, req)
+	err = messenger.SendMessage(ctxb, req)
 
 	// All of our errors are wrapped, so we can just check err.Is the
 	// error we expect (also works for nil).
@@ -433,7 +434,7 @@ func TestHandleOnionMessage(t *testing.T) {
 
 	// Create a single valid message that we can use across test cases.
 	onionMsg, err := createOnionMessage(
-		hops, nil, nil, privKeys[0], privKeys[1],
+		hops, nil, nil, nil, privKeys[0], privKeys[1],
 	)
 	require.NoError(t, err, "onion message")
 
