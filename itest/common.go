@@ -1,12 +1,17 @@
 package itest
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/carlakc/boltnd/offersrpc"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 )
@@ -121,4 +126,59 @@ func openChannelAndAnnounce(t *testing.T, net *lntest.NetworkHarness,
 			"listener: %v", node.Name(),
 		)
 	}
+}
+
+// fundNode funds a node with 1BTC and waits for the balance to reflect in
+// its confirmed wallet balance.
+func fundNode(ctx context.Context, t *testing.T, net *lntest.NetworkHarness,
+	node *lntest.HarnessNode) {
+
+	ctxt, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+	walletResp, err := node.WalletBalance(
+		ctxt, &lnrpc.WalletBalanceRequest{},
+	)
+	require.NoError(t, err, "wallet balance")
+
+	startBalance := walletResp.ConfirmedBalance
+
+	addrReq := &lnrpc.NewAddressRequest{
+		Type: lnrpc.AddressType_TAPROOT_PUBKEY,
+	}
+
+	ctxt, cancel = context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+	resp, err := node.NewAddress(ctx, addrReq)
+	require.NoError(t, err, "new address")
+
+	addr, err := btcutil.DecodeAddress(resp.Address, node.Cfg.NetParams)
+	require.NoError(t, err, "decode addr")
+
+	addrScript, err := txscript.PayToAddrScript(addr)
+	require.NoError(t, err, "pay to addr")
+
+	output := &wire.TxOut{
+		PkScript: addrScript,
+		Value:    btcutil.SatoshiPerBitcoin,
+	}
+
+	_, err = net.Miner.SendOutputs([]*wire.TxOut{output}, 7500)
+	require.NoError(t, err, "send outputs")
+
+	_, err = net.Miner.Client.Generate(6)
+	require.NoError(t, err, "generate")
+
+	require.Eventually(t, func() bool {
+		ctxt, cancel = context.WithTimeout(ctx, defaultTimeout)
+		defer cancel()
+
+		walletResp, err = node.WalletBalance(
+			ctx, &lnrpc.WalletBalanceRequest{},
+		)
+		require.NoError(t, err, "wallet balance")
+
+		// We do a loose check so that we don't have to worry about
+		// fees etc.
+		return walletResp.ConfirmedBalance > startBalance
+	}, defaultTimeout, time.Second)
 }
