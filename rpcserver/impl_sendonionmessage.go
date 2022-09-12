@@ -24,23 +24,20 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 		return nil, err
 	}
 
-	pubkey, replyPath, finalHop, err := parseSendOnionMessageRequest(req)
+	onionReq, err := parseSendOnionMessageRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
-	onionReq := onionmsg.NewSendMessageRequest(
-		pubkey, replyPath, finalHop, req.DirectConnect,
-	)
 	err = s.onionMsgr.SendMessage(ctx, onionReq)
 	switch {
 	// If we got a no path error, prompt user to try direct connect if
 	// they want to.
 	case errors.Is(err, onionmsg.ErrNoPath):
 		return nil, status.Errorf(
-			codes.NotFound, "could not find path to: %v, try "+
-				"using direct connect to deliver to peer "+
-				"(! exposes IP to recipient !)", pubkey,
+			codes.NotFound, "could not find path to destination "+
+				"try using direct connect to deliver to peer "+
+				"(! exposes IP !)",
 		)
 
 	// Otherwise fail generically.
@@ -58,24 +55,18 @@ func (s *Server) SendOnionMessage(ctx context.Context,
 // by SendOnionMessageRequest. All errors returned *must* include a grpc status
 // code.
 func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
-	*btcec.PublicKey, *lnwire.ReplyPath, []*lnwire.FinalHopPayload, error) {
+	*onionmsg.SendMessageRequest, error) {
 
 	pubkey, err := btcec.ParsePubKey(req.Pubkey)
 	if err != nil {
-		return nil, nil, nil, status.Errorf(
+		return nil, status.Errorf(
 			codes.InvalidArgument, "peer pubkey: %v", err,
 		)
 	}
 
 	replyPath, err := parseReplyPath(req.ReplyPath)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// If we have no final payloads, just return nil (this makes it easier
-	// for testing than having an empty slice).
-	if len(req.FinalPayloads) == 0 {
-		return pubkey, replyPath, nil, nil
+		return nil, err
 	}
 
 	finalHopPayloads := make(
@@ -89,7 +80,7 @@ func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 		}
 
 		if err := finalPayload.Validate(); err != nil {
-			return nil, nil, nil, status.Errorf(
+			return nil, status.Errorf(
 				codes.InvalidArgument, err.Error(),
 			)
 		}
@@ -97,5 +88,13 @@ func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 		finalHopPayloads = append(finalHopPayloads, finalPayload)
 	}
 
-	return pubkey, replyPath, finalHopPayloads, nil
+	onionReq, err := onionmsg.NewSendMessageRequest(
+		pubkey, nil, replyPath, finalHopPayloads, req.DirectConnect,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"onion request: %v", err.Error())
+	}
+
+	return onionReq, nil
 }

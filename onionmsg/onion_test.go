@@ -312,7 +312,7 @@ func TestBlindedToSphinx(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			actualPath, err := blindedToSphinx(
-				testCase.blindedPath, testCase.replyPath,
+				testCase.blindedPath, nil, testCase.replyPath,
 				testCase.finalPayload,
 			)
 			require.NoError(t, err)
