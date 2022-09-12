@@ -68,7 +68,7 @@ func TestCreatePathToBlind(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			actualPath, err := createPathToBlind(
-				testCase.route, mockedPayloadEncode,
+				testCase.route, nil, mockedPayloadEncode,
 			)
 			require.NoError(t, err, "create path")
 

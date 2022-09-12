@@ -310,6 +310,20 @@ type SendMessageRequest struct {
 	DirectConnect bool
 }
 
+// introductionNode contains the introduction node and blinding point for a
+// blinding path.
+type introductionNode struct {
+	introductionNode *btcec.PublicKey
+	blindingPoint    *btcec.PublicKey
+}
+
+// introductionNode returns information about the introduction point for a
+// message request if we are connecting our path to a blinded path provided
+// by another party.
+func (s *SendMessageRequest) introductionNode() *introductionNode {
+	return nil
+}
+
 // NewSendMessageRequest creates an onion message request.
 func NewSendMessageRequest(destination *btcec.PublicKey,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
@@ -373,7 +387,9 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
-	hops, err := createPathToBlind(path, encodeBlindedData)
+	hops, err := createPathToBlind(
+		path, req.introductionNode(), encodeBlindedData,
+	)
 	if err != nil {
 		return fmt.Errorf("path to blind: %w", err)
 	}
