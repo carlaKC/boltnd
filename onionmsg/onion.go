@@ -95,7 +95,10 @@ func createPathToBlind(path []*btcec.PublicKey, blindedStart *introductionNode,
 		}
 
 		var err error
-		hopsToBlind[hopCount-1].Payload, err = encodePayload(data)
+		// TODO: find a better solution here!!
+		// NB: this *will* panic if we're directly connected to the
+		// introdution node.
+		hopsToBlind[hopCount-2].Payload, err = encodePayload(data)
 		if err != nil {
 			return nil, fmt.Errorf("ephemeral switch out node: %v",
 				err)
