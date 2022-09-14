@@ -799,7 +799,7 @@ func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
 		Data:    buf.Bytes(),
 	}
 
-	log.Infof("Forwarding onion message to: %x, next blinding: %x",
+	log.Infof("Forwarding onion message to: %v, next blinding: %x",
 		customMsg.Peer, nextBlinding.SerializeCompressed())
 
 	err = m.lnd.SendCustomMessage(context.Background(), customMsg)
