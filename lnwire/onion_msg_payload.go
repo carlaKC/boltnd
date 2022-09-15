@@ -243,8 +243,8 @@ type ReplyPath struct {
 	// BlindingPoint is the ephemeral pubkey used in route blinding.
 	BlindingPoint *btcec.PublicKey
 
-	// Hops is a set of blinded hops following the first node ID to deliver
-	// responses to.
+	// Hops is a set of blinded hops in the route, starting with the blinded
+	// introduction node (first node id).
 	Hops []*BlindedHop
 }
 
