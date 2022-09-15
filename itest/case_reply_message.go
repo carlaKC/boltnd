@@ -2,6 +2,7 @@ package itest
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -79,6 +80,15 @@ func ReplyMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	consumeMessage := consumeOnionMessage(&wg, msgChan, errChan)
 	receiveMessage := readOnionMessage(msgChan, errChan)
 
+	fmt.Printf("CKC - Alice: %v\n", net.Alice.PubKeyStr)
+	fmt.Printf("CKC - Bob: %v\n", net.Bob.PubKeyStr)
+	fmt.Printf("CKC - Carol: %v\n", carol.PubKeyStr)
+	fmt.Printf("CKC - Dave: %v\n", dave.PubKeyStr)
+
+	fmt.Printf("CKC - intro %x\n", replyPath.Route.IntroductionNode)
+	for _, hop := range replyPath.Route.Hops {
+		fmt.Printf("CKC blinded: %x\n", hop.BlindedNodeId)
+	}
 	// Send an onion message from Alice to Dave's reply path.
 	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
 	data := []byte{9, 8, 7}

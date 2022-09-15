@@ -39,6 +39,7 @@ func parseReplyPath(req *offersrpc.BlindedPath) (*lnwire.ReplyPath, error) {
 		),
 	}
 
+	log.Infof("CKC - parse reply path: %v hops", len(req.Hops))
 	for i, hop := range req.Hops {
 		pubkey, err := btcec.ParsePubKey(hop.BlindedNodeId)
 		if err != nil {

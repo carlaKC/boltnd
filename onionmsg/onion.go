@@ -88,11 +88,18 @@ func createPathToBlind(path []*btcec.PublicKey, blindedStart *introductionNode,
 	// If we need to connect this path to a blinded path, we add a payload
 	// for the last hop in our path pointing it to the introduction node
 	// and providing the ephemeral key to switch out.
+	log.Infof("Add ephemeral switch out: %v", blindedStart != nil)
 	if blindedStart != nil {
+		log.Infof("Adding next ephemeral %x",
+			blindedStart.blindingPoint.SerializeCompressed())
+
 		data := &lnwire.BlindedRouteData{
 			NextNodeID:           blindedStart.introductionNode,
 			NextBlindingOverride: blindedStart.blindingPoint,
 		}
+
+		log.Infof("Next ephemeral is for: %x",
+			hopsToBlind[hopCount-1].NodePub.SerializeCompressed())
 
 		var err error
 		// TODO: find a better solution here!!

@@ -126,6 +126,9 @@ func buildBlindedRoute(relayingPeers []*lndclient.NodeInfo,
 		return nil, fmt.Errorf("intro payload: %w", err)
 	}
 
+	log.Infof("Picking intro node: %x", introNode.SerializeCompressed())
+	log.Infof("First Hop is: %x", ourPubkey.SerializeCompressed())
+
 	return []*sphinx.BlindedPathHop{
 		{
 			NodePub: introNode,

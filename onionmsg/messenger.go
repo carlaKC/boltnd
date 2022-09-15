@@ -374,12 +374,16 @@ func (s *SendMessageRequest) blindedHops() []*blindedHop {
 		return nil
 	}
 
+	log.Infof("CKC - blinded hops func: %v", len(s.BlindedDestination.Hops))
 	hops := make([]*blindedHop, len(s.BlindedDestination.Hops))
 	for i, hop := range s.BlindedDestination.Hops {
 		hops[i] = &blindedHop{
 			blindedNode: hop.BlindedNodeID,
 			blindedData: hop.EncryptedData,
 		}
+
+		log.Infof("CKC - blinded hop: %v is %x", i,
+			hops[i].blindedNode.SerializeCompressed())
 	}
 
 	return hops
@@ -469,6 +473,11 @@ func (m *Messenger) SendMessage(ctx context.Context,
 	}
 
 	extraHops := req.blindedHops()
+	log.Infof("CKC - Extra hops: %v", len(extraHops))
+	for _, hops := range extraHops {
+		log.Infof("CKC hop: %x", hops.blindedNode.SerializeCompressed())
+	}
+
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v "+
 		"hops and %v blinded hops", peer.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(hops), len(extraHops))
@@ -774,6 +783,7 @@ func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
 
 	// If we have a blinding override included in our encrypted data, it
 	// should be directly switched out.
+	log.Infof("Ephemeral switch: %v", data.NextBlindingOverride != nil)
 	if data.NextBlindingOverride != nil {
 		log.Infof("Ephemeral switch out: %x for %x",
 			blindingPoint.SerializeCompressed(),
@@ -851,6 +861,9 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 	if err := onionMsg.Decode(bytes.NewBuffer(msg.Data), 0); err != nil {
 		return fmt.Errorf("%w: %v", ErrBadMessage, err)
 	}
+
+	log.Infof("Blinding point: %x",
+		onionMsg.BlindingPoint.SerializeCompressed())
 
 	// The onion blob portion of our message holds the actual onion.
 	onionPktBytes := bytes.NewBuffer(onionMsg.OnionBlob)

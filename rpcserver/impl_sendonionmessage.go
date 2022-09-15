@@ -94,6 +94,14 @@ func parseSendOnionMessageRequest(req *offersrpc.SendOnionMessageRequest) (
 				err.Error(),
 			)
 		}
+
+		log.Infof("CKC - blinded intro: %x",
+			blindedDest.FirstNodeID.SerializeCompressed())
+
+		for _, hop := range blindedDest.Hops {
+			log.Infof("CKC - blinded hop: %x",
+				hop.BlindedNodeID.SerializeCompressed())
+		}
 	}
 
 	replyPath, err := parseReplyPath(req.ReplyPath)
