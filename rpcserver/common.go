@@ -89,11 +89,6 @@ func composeBlindedRoute(route *sphinx.BlindedPath) *offersrpc.BlindedPath {
 	}
 
 	for i := 0; i < len(route.BlindedHops); i++ {
-		if i == 0 {
-			rpcRoute.IntroductionEncryptedData = route.EncryptedData[i]
-			continue
-		}
-
 		rpcRoute.Hops = append(rpcRoute.Hops, &offersrpc.BlindedHop{
 			BlindedNodeId: route.BlindedHops[i].SerializeCompressed(),
 			EncryptedData: route.EncryptedData[i],
