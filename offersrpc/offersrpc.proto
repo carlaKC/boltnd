@@ -48,15 +48,13 @@ message BlindedPath {
     // The un-blinded pubkey of the introduction node for the blinded path.
     bytes introduction_node = 1;
 
-    // The encrypted data for the introduction node.
-    bytes introduction_encrypted_data = 2;
-
     // The blinding point is the ephemeral key used to blind the blinded hops
     // in the route.
-    bytes blinding_point = 3;
+    bytes blinding_point = 2;
 
-    // A set of blinded hops following the introduction point.
-    repeated BlindedHop hops = 4;
+    // The set of blinded hops in the route, starting with the blinded
+    // introduction node and ending at the recipient.
+    repeated BlindedHop hops = 3;
 }
 
 message BlindedHop {

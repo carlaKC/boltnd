@@ -21,9 +21,6 @@ func assertBlindedPathEqual(t *testing.T, expected,
 	require.Equal(t, expected.BlindingPoint, actual.BlindingPoint,
 		"blinding point")
 
-	require.Equal(t, expected.IntroductionEncryptedData,
-		actual.IntroductionEncryptedData, "introduction data")
-
 	require.Equal(t, len(expected.Hops), len(actual.Hops), "hop count")
 
 	for i, hop := range expected.Hops {
