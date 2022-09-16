@@ -150,8 +150,11 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath, extraHops []*blindedHop,
 		// onto our path, include the tlvs intended for the final hop
 		// and the reply path (if provided).
 		if i == ourHopCount-1 && extraHopCount == 0 {
+			log.Info("Setting final payload in our hops")
 			payload.FinalHopPayloads = finalPayloads
 			payload.ReplyPath = replyPath
+		} else {
+			log.Info("Not setting final payload in our hops")
 		}
 
 		// Encode the tlv stream for inclusion in our message.
@@ -181,18 +184,18 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath, extraHops []*blindedHop,
 			EncryptedData: extraHops[i].blindedData,
 		}
 
+		// If we're on the last hop, add our optional final payload
+		// and reply path.
+		if i == extraHopCount-1 {
+			log.Infof("Setting final payload for blinded route")
+			payload.FinalHopPayloads = finalPayloads
+			payload.ReplyPath = replyPath
+		}
+
 		payloadTLVs, err := lnwire.EncodeOnionMessagePayload(payload)
 		if err != nil {
 			return nil, fmt.Errorf("payload: %v encode: %v", i,
 				err)
-		}
-
-		// If we're on the last hop, add our optional final payload
-		// and reply path.
-		if i == extraHopCount-1 {
-			payload.FinalHopPayloads = finalPayloads
-			payload.ReplyPath = replyPath
-
 		}
 
 		// We need to offset our index in the sphinx path by the

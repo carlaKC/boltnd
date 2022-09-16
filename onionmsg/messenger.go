@@ -748,6 +748,8 @@ func (m *Messenger) registerHandler(request *registerHandler) error {
 				request.tlvType)
 		}
 
+		log.Infof("Deregistered: %v", request.tlvType)
+
 		delete(m.onionMsgHandlers, request.tlvType)
 		return nil
 	}
@@ -758,6 +760,8 @@ func (m *Messenger) registerHandler(request *registerHandler) error {
 		return fmt.Errorf("%w: %v", ErrHandlerRegistered,
 			request.tlvType)
 	}
+
+	log.Infof("Registered: %v", request.tlvType)
 
 	// Otherwise, just add the handler and return with a nil error.
 	m.onionMsgHandlers[request.tlvType] = request.handler
@@ -902,24 +906,26 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 		// If we have no handlers registered, then we can't do anything
 		// else with this message.
 		if kit.handlers == nil {
-			log.Info("No handlers registered, skipping %v final "+
+			log.Infof("No handlers registered, skipping %v final "+
 				"hop payloads", len(payload.FinalHopPayloads))
 
 			return nil
 		}
+		log.Infof("CKC - checking handlers: %v", len(payload.FinalHopPayloads))
 
 		// For each of our final hop payloads, identify a handling
 		// function (if any) and handoff the payload.
 		for _, extraData := range payload.FinalHopPayloads {
+			log.Infof("CKC extra data: %v", extraData.TLVType)
 			handler, ok := kit.handlers[extraData.TLVType]
 			if !ok {
-				log.Debugf("Final tlv: %v / %x unhandled",
+				log.Infof("Final tlv: %v / %x unhandled",
 					extraData.TLVType, extraData.Value)
 
 				continue
 			}
 
-			log.Debugf("Handing off TLV: %v / %w to handler",
+			log.Infof("Handing off TLV: %v / %w to handler",
 				extraData.TLVType, extraData.Value)
 
 			if err := handler(
