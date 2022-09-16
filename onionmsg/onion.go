@@ -40,12 +40,16 @@ type encodeBlindedPayload func(*lnwire.BlindedRouteData) ([]byte, error)
 // ...
 // [k] NodePub: N(k)
 //
+// If an introduction node to a blinded path is provided, the path needs to be
+// connected to its introduction node and the ephemeral key override included
+// in the final payload of the path:
+// ...
+// [k] NodePub: N(K)
+//     Payload: TLV( next_node_id: intro , override: blinding_point )
+//
 // An encodePayload function is passed in as a parameter for easy mocking in
 // tests.
-//
-// Note that this function currently sends empty onion messages to peers (no
-// TLVs in the final hop).
-func createPathToBlind(path []*btcec.PublicKey,
+func createPathToBlind(path []*btcec.PublicKey, blindedStart *introductionNode,
 	encodePayload encodeBlindedPayload) ([]*sphinx.BlindedPathHop, error) {
 
 	hopCount := len(path)
@@ -78,6 +82,23 @@ func createPathToBlind(path []*btcec.PublicKey,
 		// Add our hop to the set of blinded hops.
 		hopsToBlind[i] = &sphinx.BlindedPathHop{
 			NodePub: path[i],
+		}
+	}
+
+	// If we need to connect this path to a blinded path, we add a payload
+	// for the last hop in our path pointing it to the introduction node
+	// and providing the ephemeral key to switch out.
+	if blindedStart != nil {
+		data := &lnwire.BlindedRouteData{
+			NextNodeID:           blindedStart.unblindedID,
+			NextBlindingOverride: blindedStart.blindingPoint,
+		}
+
+		var err error
+		hopsToBlind[hopCount-1].Payload, err = encodePayload(data)
+		if err != nil {
+			return nil, fmt.Errorf("ephemeral switch out node: %v",
+				err)
 		}
 	}
 

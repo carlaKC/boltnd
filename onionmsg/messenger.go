@@ -410,7 +410,9 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
-	hops, err := createPathToBlind(path, encodeBlindedData)
+	hops, err := createPathToBlind(
+		path, introductionNode, encodeBlindedData,
+	)
 	if err != nil {
 		return fmt.Errorf("path to blind: %w", err)
 	}
