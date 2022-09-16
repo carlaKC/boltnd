@@ -324,10 +324,23 @@ type introductionNode struct {
 	blindingPoint *btcec.PublicKey
 }
 
+// blindedHop represents a blinded node and its associated encrypted data.
+type blindedHop struct {
+	blindedNode *btcec.PublicKey
+	blindedData []byte
+}
+
 // introductionNode returns information about the introduction point for a
 // message request if we are connecting our path to a blinded path provided
 // by another party.
 func (s *SendMessageRequest) introductionNode() *introductionNode {
+	return nil
+}
+
+// blindedHops returns any blinded hops that need to be appended to our route.
+// These hops are included if we are connecting our path to a blinded path
+// provided by another party.
+func (s *SendMessageRequest) blindedHops() []*blindedHop {
 	return nil
 }
 
@@ -417,10 +430,14 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		return fmt.Errorf("path to blind: %w", err)
 	}
 
-	// Combine our onion hops with the reply path and payloads for the
-	// recipient to create an onion message.
+	extraHops := req.blindedHops()
+	log.Infof("Onion message to: %x to be delivered via: %x along: %v "+
+		"hops and %v blinded hops", peer.SerializeCompressed(),
+		path[0].SerializeCompressed(), len(hops), len(extraHops))
+
 	onionMsg, err := createOnionMessage(
-		hops, req.ReplyPath, req.FinalPayloads, sessionKey, blindingKey,
+		hops, extraHops, req.ReplyPath, req.FinalPayloads,
+		sessionKey, blindingKey,
 	)
 	if err != nil {
 		return fmt.Errorf("could not create onion message: %w", err)
