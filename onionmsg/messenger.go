@@ -317,6 +317,20 @@ func (s *SendMessageRequest) targetPeer() *btcec.PublicKey {
 	return s.Peer
 }
 
+// introductionNode contains the introduction node and blinding point for a
+// blinding path.
+type introductionNode struct {
+	unblindedID   *btcec.PublicKey
+	blindingPoint *btcec.PublicKey
+}
+
+// introductionNode returns information about the introduction point for a
+// message request if we are connecting our path to a blinded path provided
+// by another party.
+func (s *SendMessageRequest) introductionNode() *introductionNode {
+	return nil
+}
+
 // NewSendMessageRequest creates an onion message request.
 func NewSendMessageRequest(destination *btcec.PublicKey,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
@@ -348,12 +362,17 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		return fmt.Errorf("could not get blinding key: %w", err)
 	}
 
+	introductionNode := req.introductionNode()
+
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
-	path, err := m.unblindedPath(ctx, req.targetPeer(), req.DirectConnect)
+	path, err := m.unblindedPath(
+		ctx, req.targetPeer(), req.DirectConnect, introductionNode != nil,
+	)
 	if err != nil {
 		return fmt.Errorf("unblinded path: %w", err)
 	}
+	firstHop := path[0]
 
 	sphinxPath, err := blindedPath(
 		req, blindingKey, path, encodeBlindedData,
@@ -364,10 +383,10 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
 		req.targetPeer().SerializeCompressed(),
-		path[0].SerializeCompressed(), len(path))
+		firstHop.SerializeCompressed(), len(path))
 
 	msg, err := onionMessage(
-		path[0], sphinxPath, sessionKey, blindingKey.PubKey(),
+		firstHop, sphinxPath, sessionKey, blindingKey.PubKey(),
 	)
 	if err != nil {
 		return fmt.Errorf("onion message: %w")
@@ -381,8 +400,8 @@ func (m *Messenger) SendMessage(ctx context.Context,
 // perform an ad-hoc p2p connection to the peer and return a single hop path
 // to the target.
 func (m *Messenger) unblindedPath(ctx context.Context,
-	peer *btcec.PublicKey, directConnect bool) ([]*btcec.PublicKey,
-	error) {
+	peer *btcec.PublicKey, directConnect, introNode bool) (
+	[]*btcec.PublicKey, error) {
 
 	var (
 		path []*btcec.PublicKey
@@ -410,6 +429,14 @@ func (m *Messenger) unblindedPath(ctx context.Context,
 	// found).
 	if len(path) == 0 {
 		return nil, fmt.Errorf("%w: %v", ErrNoPath, peer)
+	}
+
+	// If we have an introduction node (meaning that we're sending to a
+	// blinded path), we will have the introduction node included as the
+	// final node in our path. We used its unblinded node ID to get this
+	// path, but we actually want to use the blinded node ID in our path.
+	if introNode {
+		path = path[:len(path)-1]
 	}
 
 	return path, nil
