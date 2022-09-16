@@ -317,6 +317,20 @@ func (s *SendMessageRequest) targetPeer() *btcec.PublicKey {
 	return s.Peer
 }
 
+// introductionNode contains the introduction node and blinding point for a
+// blinding path.
+type introductionNode struct {
+	unblindedID   *btcec.PublicKey
+	blindingPoint *btcec.PublicKey
+}
+
+// introductionNode returns information about the introduction point for a
+// message request if we are connecting our path to a blinded path provided
+// by another party.
+func (s *SendMessageRequest) introductionNode() *introductionNode {
+	return nil
+}
+
 // NewSendMessageRequest creates an onion message request.
 func NewSendMessageRequest(destination *btcec.PublicKey,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
@@ -378,9 +392,21 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		return fmt.Errorf("%w: %v", ErrNoPath, peer)
 	}
 
+	// Save the unblinded node ID of the first hop in our path. We will
+	// deliver the onion message to this peer.
+	firstHop := *path[0]
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
 		peer.SerializeCompressed(),
-		path[0].SerializeCompressed(), len(path))
+		firstHop.SerializeCompressed(), len(path))
+
+	// If we have an introduction node (meaning that we're sending to a
+	// blinded path), we will have the introduction node included as the
+	// final node in our path. We used its unblinded node ID to get this
+	// path, but we actually want to use the blinded node ID in our path.
+	introductionNode := req.introductionNode()
+	if introductionNode != nil {
+		path = path[:len(path)-1]
+	}
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
@@ -400,7 +426,7 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Finally, convert this onion message to a custom message so that we
 	// can sent it via lnd's custom message API.
-	msg, err := customOnionMessage(path[0], onionMsg)
+	msg, err := customOnionMessage(&firstHop, onionMsg)
 	if err != nil {
 		return fmt.Errorf("could not create custom message: %w", err)
 	}
