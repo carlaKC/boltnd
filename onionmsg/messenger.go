@@ -328,6 +328,7 @@ type SendMessageRequest struct {
 // blinding path.
 type introductionNode struct {
 	introductionNode *btcec.PublicKey
+	blindedNode      *btcec.PublicKey
 	blindingPoint    *btcec.PublicKey
 }
 
@@ -347,6 +348,7 @@ func (s *SendMessageRequest) introductionNode() *introductionNode {
 
 	return &introductionNode{
 		introductionNode: s.BlindedDestination.FirstNodeID,
+		blindedNode:      s.BlindedDestination.Hops[0].BlindedNodeID,
 		blindingPoint:    s.BlindedDestination.BlindingPoint,
 	}
 }
@@ -465,6 +467,8 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
+	// We need to *not* have the introduction node's unblinded key here,
+	// we need to have the blinded key added on the end.
 	hops, err := createPathToBlind(
 		path, req.introductionNode(), encodeBlindedData,
 	)

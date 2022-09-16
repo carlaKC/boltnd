@@ -79,6 +79,10 @@ func createPathToBlind(path []*btcec.PublicKey, blindedStart *introductionNode,
 				"encoding failed: %w", i, err)
 		}
 
+		log.Infof("Hop: %v node: %x next node: %x", i,
+			path[i].SerializeCompressed(),
+			data.NextNodeID.SerializeCompressed())
+
 		// Add our hop to the set of blinded hops.
 		hopsToBlind[i] = &sphinx.BlindedPathHop{
 			NodePub: path[i],
@@ -90,16 +94,14 @@ func createPathToBlind(path []*btcec.PublicKey, blindedStart *introductionNode,
 	// and providing the ephemeral key to switch out.
 	log.Infof("Add ephemeral switch out: %v", blindedStart != nil)
 	if blindedStart != nil {
-		log.Infof("Adding next ephemeral %x",
-			blindedStart.blindingPoint.SerializeCompressed())
-
 		data := &lnwire.BlindedRouteData{
 			NextNodeID:           blindedStart.introductionNode,
 			NextBlindingOverride: blindedStart.blindingPoint,
 		}
 
-		log.Infof("Next ephemeral is for: %x",
-			hopsToBlind[hopCount-1].NodePub.SerializeCompressed())
+		log.Infof("Hop: %v node: %x blinding override: %v", hopCount-1,
+			hopsToBlind[hopCount-1].NodePub.SerializeCompressed(),
+			blindedStart.blindingPoint.SerializeCompressed())
 
 		var err error
 		// TODO: find a better solution here!!
@@ -110,6 +112,11 @@ func createPathToBlind(path []*btcec.PublicKey, blindedStart *introductionNode,
 			return nil, fmt.Errorf("ephemeral switch out node: %v",
 				err)
 		}
+
+		// If we have a blinded start we want to remove the unblinded
+		// introduction node because we should use the blinded ID
+		// that was given to us in our blinded route.
+		hopsToBlind = hopsToBlind[:hopCount-1]
 	}
 
 	return hopsToBlind, nil
