@@ -79,8 +79,10 @@ func readOnionMessage(msgChan chan *offersrpc.SubscribeOnionPayloadResponse,
 
 		// In the case of a timeout, let our test exit. This will
 		// cancel the receive goroutine (through context cancelation)
-		// and wait for it to exit.
-		case <-time.After(defaultTimeout):
+		// and wait for it to exit. We allow a full minute because
+		// custom messages in lnd are low priority, so they can have
+		// long waits.
+		case <-time.After(time.Minute):
 			return nil, errors.New("message read timeout")
 		}
 	}
