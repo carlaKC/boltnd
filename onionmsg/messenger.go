@@ -389,7 +389,7 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Finally, convert this onion message to a custom message so that we
 	// can sent it via lnd's custom message API.
-	msg, err := customOnionMessage(req.Peer, onionMsg)
+	msg, err := customOnionMessage(path[0], onionMsg)
 	if err != nil {
 		return fmt.Errorf("could not create custom message: %w", err)
 	}
