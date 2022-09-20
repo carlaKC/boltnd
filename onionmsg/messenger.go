@@ -348,36 +348,21 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		return fmt.Errorf("unblinded path: %w", err)
 	}
 
-	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
-		req.Peer.SerializeCompressed(),
-		path[0].SerializeCompressed(), len(path))
-
-	// Create a set of hops and corresponding blobs to be encrypted which
-	// form the route for our blinded path.
-	hops, err := createPathToBlind(path, encodeBlindedData)
-	if err != nil {
-		return fmt.Errorf("path to blind: %w", err)
-	}
-
-	// Create a blinded route from our set of hops, encrypting blobs and
-	// blinding node keys as required.
-	blindedPath, err := sphinx.BuildBlindedPath(blindingKey, hops)
+	sphinxPath, err := blindedPath(
+		req, blindingKey, path, encodeBlindedData,
+	)
 	if err != nil {
 		return fmt.Errorf("blinded path: %w", err)
 	}
 
-	// Convert our blinded path to a sphinx path, including final payloads.
-	sphinxPath, err := blindedToSphinx(
-		blindedPath, req.ReplyPath, req.FinalPayloads,
-	)
-	if err != nil {
-		return fmt.Errorf("could not create sphinx path: %w", err)
-	}
+	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
+		req.Peer.SerializeCompressed(),
+		path[0].SerializeCompressed(), len(path))
 
 	// Combine our onion hops with the reply path and payloads for the
 	// recipient to create an onion message.
 	onionMsg, err := createOnionMessage(
-		sphinxPath, sessionKey, blindedPath.BlindingPoint,
+		sphinxPath, sessionKey, blindingKey.PubKey(),
 	)
 	if err != nil {
 		return fmt.Errorf("could not create onion message: %w", err)
@@ -430,6 +415,37 @@ func (m *Messenger) unblindedPath(ctx context.Context,
 	}
 
 	return path, nil
+}
+
+// blindedPath produces a blinded path for the path provided, including final
+// payloads / reply paths in the message request.
+func blindedPath(req *SendMessageRequest,
+	blindingKey *btcec.PrivateKey, path []*btcec.PublicKey,
+	encode encodeBlindedPayload) (*sphinx.PaymentPath, error) {
+
+	// Create a set of hops and corresponding blobs to be encrypted which
+	// form the route for our blinded path.
+	hops, err := createPathToBlind(path, encode)
+	if err != nil {
+		return nil, fmt.Errorf("path to blind: %w", err)
+	}
+
+	// Create a blinded route from our set of hops, encrypting blobs and
+	// blinding node keys as required.
+	blindedPath, err := sphinx.BuildBlindedPath(blindingKey, hops)
+	if err != nil {
+		return nil, fmt.Errorf("blinded path: %w", err)
+	}
+
+	// Convert our blinded path to a sphinx path, including final payloads.
+	sphinxPath, err := blindedToSphinx(
+		blindedPath, req.ReplyPath, req.FinalPayloads,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create sphinx path: %w", err)
+	}
+
+	return sphinxPath, nil
 }
 
 // lookupAndConnect checks whether we have a connection with a peer, and  looks
