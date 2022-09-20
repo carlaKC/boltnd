@@ -359,20 +359,11 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		req.Peer.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
-	// Combine our onion hops with the reply path and payloads for the
-	// recipient to create an onion message.
-	onionMsg, err := createOnionMessage(
-		sphinxPath, sessionKey, blindingKey.PubKey(),
+	msg, err := onionMessage(
+		path[0], sphinxPath, sessionKey, blindingKey.PubKey(),
 	)
 	if err != nil {
-		return fmt.Errorf("could not create onion message: %w", err)
-	}
-
-	// Finally, convert this onion message to a custom message so that we
-	// can sent it via lnd's custom message API.
-	msg, err := customOnionMessage(path[0], onionMsg)
-	if err != nil {
-		return fmt.Errorf("could not create custom message: %w", err)
+		return fmt.Errorf("onion message: %w")
 	}
 
 	return m.lnd.SendCustomMessage(ctx, *msg)
@@ -446,6 +437,28 @@ func blindedPath(req *SendMessageRequest,
 	}
 
 	return sphinxPath, nil
+}
+
+func onionMessage(peer *btcec.PublicKey, sphinxPath *sphinx.PaymentPath,
+	sessionKey *btcec.PrivateKey,
+	blindingKey *btcec.PublicKey) (*lndclient.CustomMessage, error) {
+	// Combine our onion hops with the reply path and payloads for the
+	// recipient to create an onion message.
+	onionMsg, err := createOnionMessage(
+		sphinxPath, sessionKey, blindingKey,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create onion message: %w", err)
+	}
+
+	// Finally, convert this onion message to a custom message so that we
+	// can sent it via lnd's custom message API.
+	msg, err := customOnionMessage(peer, onionMsg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create custom message: %w", err)
+	}
+
+	return msg, nil
 }
 
 // lookupAndConnect checks whether we have a connection with a peer, and  looks
