@@ -343,28 +343,9 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
-	var path []*btcec.PublicKey
-	if !req.DirectConnect {
-		path, err = multiHopPath(ctx, m.lnd, req.Peer)
-		if err != nil {
-			return fmt.Errorf("could not find path to %v: %w",
-				req.Peer, err)
-		}
-	} else {
-		if err := m.lookupAndConnect(ctx, req.Peer); err != nil {
-			return fmt.Errorf("lookup and connect: %w", err)
-		}
-
-		path = []*btcec.PublicKey{
-			req.Peer,
-		}
-	}
-
-	// Check whether we have a path to the target peer (this will always
-	// pass for direct connect, but may fail for multi-hop if no route was
-	// found).
-	if len(path) == 0 {
-		return fmt.Errorf("%w: %v", ErrNoPath, req.Peer)
+	path, err := m.unblindedPath(ctx, req.Peer, req.DirectConnect)
+	if err != nil {
+		return fmt.Errorf("unblinded path: %w", err)
 	}
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
@@ -410,6 +391,45 @@ func (m *Messenger) SendMessage(ctx context.Context,
 	}
 
 	return m.lnd.SendCustomMessage(ctx, *msg)
+}
+
+// unblindedPath finds a path to relay onion messages over from our node to the
+// target peer provided. If we wish to directly connect to the peer, it will
+// perform an ad-hoc p2p connection to the peer and return a single hop path
+// to the target.
+func (m *Messenger) unblindedPath(ctx context.Context,
+	peer *btcec.PublicKey, directConnect bool) ([]*btcec.PublicKey,
+	error) {
+
+	var (
+		path []*btcec.PublicKey
+		err  error
+	)
+
+	if !directConnect {
+		path, err = multiHopPath(ctx, m.lnd, peer)
+		if err != nil {
+			return nil, fmt.Errorf("could not find path to %v: %w",
+				peer, err)
+		}
+	} else {
+		if err := m.lookupAndConnect(ctx, peer); err != nil {
+			return nil, fmt.Errorf("lookup and connect: %w", err)
+		}
+
+		path = []*btcec.PublicKey{
+			peer,
+		}
+	}
+
+	// Check whether we have a path to the target peer (this will always
+	// pass for direct connect, but may fail for multi-hop if no route was
+	// found).
+	if len(path) == 0 {
+		return nil, fmt.Errorf("%w: %v", ErrNoPath, peer)
+	}
+
+	return path, nil
 }
 
 // lookupAndConnect checks whether we have a connection with a peer, and  looks
