@@ -450,7 +450,7 @@ func blindedPath(req *SendMessageRequest,
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
-	hops, err := createPathToBlind(path, encode)
+	hops, err := createPathToBlind(path, req.introductionNode(), encode)
 	if err != nil {
 		return nil, fmt.Errorf("path to blind: %w", err)
 	}
