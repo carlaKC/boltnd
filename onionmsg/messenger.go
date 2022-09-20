@@ -378,10 +378,25 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		return fmt.Errorf("path to blind: %w", err)
 	}
 
+	// Create a blinded route from our set of hops, encrypting blobs and
+	// blinding node keys as required.
+	blindedPath, err := sphinx.BuildBlindedPath(blindingKey, hops)
+	if err != nil {
+		return fmt.Errorf("blinded path: %w", err)
+	}
+
+	// Convert our blinded path to a sphinx path, including final payloads.
+	sphinxPath, err := blindedToSphinx(
+		blindedPath, req.ReplyPath, req.FinalPayloads,
+	)
+	if err != nil {
+		return fmt.Errorf("could not create sphinx path: %w", err)
+	}
+
 	// Combine our onion hops with the reply path and payloads for the
 	// recipient to create an onion message.
 	onionMsg, err := createOnionMessage(
-		hops, req.ReplyPath, req.FinalPayloads, sessionKey, blindingKey,
+		sphinxPath, sessionKey, blindedPath.BlindingPoint,
 	)
 	if err != nil {
 		return fmt.Errorf("could not create onion message: %w", err)

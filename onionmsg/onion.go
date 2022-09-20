@@ -148,24 +148,9 @@ func encodeBlindedData(data *lnwire.BlindedRouteData) ([]byte, error) {
 
 // createOnionMessage creates an onion message, blinding the nodes in the path
 // provided and including relevant TLVs for blinded relay of messages.
-func createOnionMessage(hops []*sphinx.BlindedPathHop,
-	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
-	sessionKey, blindingKey *btcec.PrivateKey) (*lnwire.OnionMessage,
-	error) {
-
-	// Create a blinded route from our set of hops, encrypting blobs and
-	// blinding node keys as required.
-	blindedPath, err := sphinx.BuildBlindedPath(blindingKey, hops)
-	if err != nil {
-		return nil, fmt.Errorf("blinded path: %w", err)
-	}
-
-	sphinxPath, err := blindedToSphinx(
-		blindedPath, replyPath, finalPayloads,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("could not create sphinx path: %w", err)
-	}
+func createOnionMessage(sphinxPath *sphinx.PaymentPath,
+	sessionKey *btcec.PrivateKey, blindingPoint *btcec.PublicKey) (
+	*lnwire.OnionMessage, error) {
 
 	// Finally, we want to case this all up in an onion.
 	onionPacket, err := sphinx.NewOnionPacket(
@@ -181,9 +166,7 @@ func createOnionMessage(hops []*sphinx.BlindedPathHop,
 		return nil, fmt.Errorf("onion packet encode: %w", err)
 	}
 
-	return lnwire.NewOnionMessage(
-		blindedPath.BlindingPoint, buf.Bytes(),
-	), nil
+	return lnwire.NewOnionMessage(blindingPoint, buf.Bytes()), nil
 }
 
 // customOnionMessage encodes the onion message provided and wraps it in a
