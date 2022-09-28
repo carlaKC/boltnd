@@ -377,14 +377,14 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		sessionKey, blindingKey, path, req.ReplyPath, req.FinalPayloads,
 	)
 
-	onionMsg, err := routes.CreateBlindedRoute(pathRequest)
+	pathResponse, err := routes.CreateBlindedRoute(pathRequest)
 	if err != nil {
 		return fmt.Errorf("create blinded route: %w", err)
 	}
 
 	// Finally, convert this onion message to a custom message so that we
 	// can sent it via lnd's custom message API.
-	msg, err := customOnionMessage(path[0], onionMsg)
+	msg, err := customOnionMessage(path[0], pathResponse.OnionMessage)
 	if err != nil {
 		return fmt.Errorf("could not create custom message: %w", err)
 	}
