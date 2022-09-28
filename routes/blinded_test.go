@@ -542,6 +542,7 @@ func TestBlindedToSphinx(t *testing.T) {
 	tests := []struct {
 		name         string
 		blindedPath  *sphinx.BlindedPath
+		extraHops    []*lnwire.BlindedHop
 		replyPath    *lnwire.ReplyPath
 		finalPayload []*lnwire.FinalHopPayload
 		expectedPath *sphinx.PaymentPath
@@ -688,16 +689,50 @@ func TestBlindedToSphinx(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "blinded hops included",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+				},
+			},
+			extraHops: []*lnwire.BlindedHop{
+				{
+					BlindedNodeID: pubkeys[2],
+					EncryptedData: encryptedData1,
+				},
+			},
+			finalPayload: finalPayload,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1WithFinal,
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			actualPath, err := blindedToSphinx(
-				testCase.blindedPath, testCase.replyPath,
-				testCase.finalPayload,
+				testCase.blindedPath, testCase.extraHops,
+				testCase.replyPath, testCase.finalPayload,
 			)
 			require.NoError(t, err)
-
 			require.Equal(t, testCase.expectedPath, actualPath)
 		})
 	}

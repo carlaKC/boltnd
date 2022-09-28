@@ -362,6 +362,16 @@ func (r *BlindedRouteRequest) blindedStart() *blindedStart {
 	}
 }
 
+// blindedHops returns any additional blinded hops included in the request that
+// need to be added to our path.
+func (r *BlindedRouteRequest) blindedHops() []*lnwire.BlindedHop {
+	if r.blindedDestination == nil {
+		return nil
+	}
+
+	return r.blindedDestination.Hops
+}
+
 // BlindedRouteRequest contains the output of a request for a blinded route.
 type BlindedRouteResponse struct {
 	// OnionMessage is the onion message to be sent on the wire.
@@ -426,7 +436,7 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 	// Convert that blinded path to a sphinx path, adding in our reply
 	// path and final payloads if required.
 	sphinxPath, err := blindedToSphinx(
-		blindedPath, req.replyPath, req.finalPayloads,
+		blindedPath, req.blindedHops(), req.replyPath, req.finalPayloads,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create sphinx path: %w", err)
@@ -542,26 +552,33 @@ func createPathToBlind(path []*btcec.PublicKey, blindedStart *blindedStart,
 // be wrapped up in an onion, encoding the TLV payload for each hop along the
 // way.
 func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
-	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload) (
+	extraHops []*lnwire.BlindedHop, replyPath *lnwire.ReplyPath,
+	finalPayloads []*lnwire.FinalHopPayload) (
 	*sphinx.PaymentPath, error) {
 
-	var sphinxPath sphinx.PaymentPath
+	var (
+		sphinxPath sphinx.PaymentPath
+
+		ourHopCount   = len(blindedRoute.EncryptedData)
+		extraHopCount = len(extraHops)
+	)
 
 	// Fill in the blinded node id and encrypted data for all hops. This
 	// requirement differs from blinded hops used for payments, where we
 	// don't use the blinded introduction node id. However, since onion
 	// messages are fully blinded by default, we use the blinded
 	// introduction node id.
-	for i := 0; i < len(blindedRoute.EncryptedData); i++ {
+	for i := 0; i < ourHopCount; i++ {
 		// Create an onion message payload with the encrypted data for
 		// this hop.
 		payload := &lnwire.OnionMessagePayload{
 			EncryptedData: blindedRoute.EncryptedData[i],
 		}
 
-		// If we're on the final hop, also include the tlvs intended
-		// for the final hop and the reply path (if provided).
-		if i == len(blindedRoute.EncryptedData)-1 {
+		// If we're on the final hop and there are no extra hops to add
+		// onto our path, include the tlvs intended for the final hop
+		// and the reply path (if provided).
+		if i == ourHopCount-1 && extraHopCount == 0 {
 			payload.FinalHopPayloads = finalPayloads
 			payload.ReplyPath = replyPath
 		}
@@ -574,6 +591,37 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
 			return nil, fmt.Errorf("sphinx hop %v: %w", i, err)
 		}
 		sphinxPath[i] = *hop
+	}
+
+	// If we don't have any more hops to append to our path, just return
+	// it as-is here.
+	if extraHopCount == 0 {
+		return &sphinxPath, nil
+	}
+
+	for i := 0; i < extraHopCount; i++ {
+		payload := &lnwire.OnionMessagePayload{
+			EncryptedData: extraHops[i].EncryptedData,
+		}
+
+		// If we're on the last hop, add our optional final payload
+		// and reply path.
+		if i == extraHopCount-1 {
+			payload.FinalHopPayloads = finalPayloads
+			payload.ReplyPath = replyPath
+		}
+
+		hop, err := createSphinxHop(
+			*extraHops[i].BlindedNodeID, payload,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("sphinx hop %v: %w", i, err)
+		}
+
+		// We need to offset our index in the sphinx path by the
+		// number of hops that we added in the loop above.
+		sphinxIndex := i + ourHopCount
+		sphinxPath[sphinxIndex] = *hop
 	}
 
 	return &sphinxPath, nil
