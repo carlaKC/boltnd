@@ -430,22 +430,35 @@ func blindedToSphinx(blindedRoute *sphinx.BlindedPath,
 		}
 
 		// Encode the tlv stream for inclusion in our message.
-		payloadTLVs, err := lnwire.EncodeOnionMessagePayload(payload)
+		hop, err := createSphinxHop(
+			*blindedRoute.BlindedHops[i], payload,
+		)
 		if err != nil {
-			return nil, fmt.Errorf("payload: %v encode: %v", i,
-				err)
+			return nil, fmt.Errorf("sphinx hop %v: %w", i, err)
 		}
-
-		sphinxPath[i] = sphinx.OnionHop{
-			NodePub: *blindedRoute.BlindedHops[i],
-			HopPayload: sphinx.HopPayload{
-				Type:    sphinx.PayloadTLV,
-				Payload: payloadTLVs,
-			},
-		}
+		sphinxPath[i] = *hop
 	}
 
 	return &sphinxPath, nil
+}
+
+// createSphinxHop encodes an onion message payload and produces a sphinx
+// onion hop for it.
+func createSphinxHop(nodeID btcec.PublicKey,
+	payload *lnwire.OnionMessagePayload) (*sphinx.OnionHop, error) {
+
+	payloadTLVs, err := lnwire.EncodeOnionMessagePayload(payload)
+	if err != nil {
+		return nil, fmt.Errorf("payload: encode: %v", err)
+	}
+
+	return &sphinx.OnionHop{
+		NodePub: nodeID,
+		HopPayload: sphinx.HopPayload{
+			Type:    sphinx.PayloadTLV,
+			Payload: payloadTLVs,
+		},
+	}, nil
 }
 
 // encodeBlindedData encodes a TLV stream for an intermediate hop in a
