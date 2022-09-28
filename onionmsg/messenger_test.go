@@ -334,6 +334,26 @@ type handleOnionMesageMock struct {
 	*mock.Mock
 }
 
+func (h *handleOnionMesageMock) processOnion(d []byte) (*btcec.PublicKey,
+	*sphinx.ProcessedPacket, error) {
+
+	args := h.Mock.MethodCalled("processOnion", d)
+
+	return args.Get(0).(*btcec.PublicKey),
+		args.Get(1).(*sphinx.ProcessedPacket), args.Error(2)
+}
+
+// mockProcessOnion primes the mock to handle a call to decode an onion message.
+func mockProcessOnion(m *mock.Mock, blinding *btcec.PublicKey,
+	packet *sphinx.ProcessedPacket, err error) {
+
+	m.On(
+		"processOnion", mock.Anything,
+	).Once().Return(
+		blinding, packet, err,
+	)
+}
+
 func (h *handleOnionMesageMock) DecodePayload(o []byte) (
 	*lnwire.OnionMessagePayload, error) {
 
@@ -421,21 +441,15 @@ func mockMessageHandled(m *mock.Mock, path *lnwire.ReplyPath, data,
 
 // TestHandleOnionMessage tests different handling cases for onion messages.
 func TestHandleOnionMessage(t *testing.T) {
-	pubkeys := testutils.GetPubkeys(t, 3)
+	pubkeys := testutils.GetPubkeys(t, 4)
 	nodeKey := pubkeys[0]
-	hops := []*sphinx.BlindedPathHop{
-		{
-			NodePub: pubkeys[0],
-		},
-	}
-
-	privKeys := testutils.GetPrivkeys(t, 2)
+	blinding := pubkeys[3]
 
 	// Create a single valid message that we can use across test cases.
-	onionMsg, err := createOnionMessage(
-		hops, nil, nil, privKeys[0], privKeys[1],
-	)
-	require.NoError(t, err, "onion message")
+	onionMsg := &lnwire.OnionMessage{
+		BlindingPoint: blinding,
+		OnionBlob:     []byte{1, 2, 3},
+	}
 
 	msg, err := customOnionMessage(nodeKey, onionMsg)
 	require.NoError(t, err, "custom message")
@@ -487,10 +501,8 @@ func TestHandleOnionMessage(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		msg          lndclient.CustomMessage
-		processOnion func(*sphinx.OnionPacket, *btcec.PublicKey) (
-			*sphinx.ProcessedPacket, error)
+		name        string
+		msg         lndclient.CustomMessage
 		setupMock   func(*mock.Mock)
 		expectedErr error
 	}{
@@ -498,18 +510,18 @@ func TestHandleOnionMessage(t *testing.T) {
 		{
 			name: "message for our node",
 			msg:  *msg,
-			// Return a packet indicating that we're the recipient.
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
 
-				return &sphinx.ProcessedPacket{
-					Action: sphinx.ExitNode,
-				}, nil
-			},
 			// We only expect our payload to be decoded, no handling
 			// because we don't have final payloads.
 			setupMock: func(m *mock.Mock) {
+
+				// Return a packet indicating that we're the
+				// recipient.
+				packet := &sphinx.ProcessedPacket{
+					Action: sphinx.ExitNode,
+				}
+
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, payloadNoFinalHops, nil)
 			},
 			expectedErr: nil,
@@ -517,19 +529,17 @@ func TestHandleOnionMessage(t *testing.T) {
 		{
 			name: "message for forwarding - no next onion",
 			msg:  *msg,
-			// Return a packet indicating that there are more hops,
-			// but it does not have a next onion packet to forward.
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return &sphinx.ProcessedPacket{
-					Action: sphinx.MoreHops,
-				}, nil
-			},
 			// Return a payload with no extra data for the final
 			// hop.
 			setupMock: func(m *mock.Mock) {
+				// Return a packet indicating that there are more hops,
+				// but it does not have a next onion packet to forward.
+
+				packet := &sphinx.ProcessedPacket{
+					Action: sphinx.MoreHops,
+				}
+
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, payloadNoFinalHops, nil)
 			},
 			expectedErr: ErrNoForwardingOnion,
@@ -538,25 +548,20 @@ func TestHandleOnionMessage(t *testing.T) {
 			name: "message for forwarding",
 			msg:  *msg,
 			// Return a packet indicating that there are more hops.
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return &sphinx.ProcessedPacket{
-					Action:     sphinx.MoreHops,
-					NextPacket: &sphinx.OnionPacket{},
-				}, nil
-			},
 			// Return a payload with no extra data for the final
 			// hop.
 			setupMock: func(m *mock.Mock) {
+				packet := &sphinx.ProcessedPacket{
+					Action:     sphinx.MoreHops,
+					NextPacket: &sphinx.OnionPacket{},
+				}
+
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, payloadNoFinalHops, nil)
 
 				data := &lnwire.BlindedRouteData{
 					NextNodeID: pubkeys[0],
 				}
-
-				blinding := privKeys[1].PubKey()
 
 				mockDecryptBlob(
 					m, blinding,
@@ -575,17 +580,13 @@ func TestHandleOnionMessage(t *testing.T) {
 			name: "message for forwarding with final payload",
 			msg:  *msg,
 			// Return a packet indicating that there are more hops.
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return &sphinx.ProcessedPacket{
-					Action: sphinx.MoreHops,
-				}, nil
-			},
 			// Return a payload that has data for the final hop,
 			// despite this being for an intermediate node.
 			setupMock: func(m *mock.Mock) {
+				packet := &sphinx.ProcessedPacket{
+					Action: sphinx.MoreHops,
+				}
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, payloadWithFinal, nil)
 			},
 			expectedErr: ErrFinalPayload,
@@ -594,17 +595,13 @@ func TestHandleOnionMessage(t *testing.T) {
 			name: "invalid message",
 			msg:  *msg,
 			// Return a packet indicating that there are more hops.
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return &sphinx.ProcessedPacket{
-					Action: sphinx.Failure,
-				}, nil
-			},
-			// We'll decode the payload before we check the next action
-			// for the packet.
+			// We'll decode the payload before we check the next
+			// action for the packet.
 			setupMock: func(m *mock.Mock) {
+				packet := &sphinx.ProcessedPacket{
+					Action: sphinx.Failure,
+				}
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, payloadWithFinal, nil)
 			},
 			expectedErr: ErrBadMessage,
@@ -613,32 +610,24 @@ func TestHandleOnionMessage(t *testing.T) {
 			name: "processing failed",
 			msg:  *msg,
 			// Fail onion processing.
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return nil, mockErr
+			setupMock: func(m *mock.Mock) {
+				mockProcessOnion(
+					m, blinding, &sphinx.ProcessedPacket{},
+					mockErr,
+				)
 			},
-			// Don't prime our mock because we fail on onion
-			// processing.
-			setupMock: func(*mock.Mock) {},
-
 			expectedErr: ErrBadOnionBlob,
 		},
 		{
 			name: "final payload handled",
 			msg:  *msg,
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return &sphinx.ProcessedPacket{
-					Action: sphinx.ExitNode,
-				}, nil
-			},
 			// Setup our mock to return a final payload and to
 			// handle it without an error.
 			setupMock: func(m *mock.Mock) {
+				packet := &sphinx.ProcessedPacket{
+					Action: sphinx.ExitNode,
+				}
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, payloadWithFinal, nil)
 
 				mockMessageHandled(
@@ -653,17 +642,13 @@ func TestHandleOnionMessage(t *testing.T) {
 		{
 			name: "final payload handler error",
 			msg:  *msg,
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return &sphinx.ProcessedPacket{
-					Action: sphinx.ExitNode,
-				}, nil
-			},
 			// Setup our mock to return a final payload and to
 			// handle it without an error.
 			setupMock: func(m *mock.Mock) {
+				packet := &sphinx.ProcessedPacket{
+					Action: sphinx.ExitNode,
+				}
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, payloadWithFinal, nil)
 
 				mockMessageHandled(
@@ -679,17 +664,13 @@ func TestHandleOnionMessage(t *testing.T) {
 		{
 			name: "final payload no handler",
 			msg:  *msg,
-			processOnion: func(_ *sphinx.OnionPacket,
-				_ *btcec.PublicKey) (*sphinx.ProcessedPacket,
-				error) {
-
-				return &sphinx.ProcessedPacket{
-					Action: sphinx.ExitNode,
-				}, nil
-			},
 			// Setup our mock to return a final payload but not
 			// to handle it because we don't register a handler.
 			setupMock: func(m *mock.Mock) {
+				packet := &sphinx.ProcessedPacket{
+					Action: sphinx.ExitNode,
+				}
+				mockProcessOnion(m, blinding, packet, nil)
 				mockPayloadDecode(m, unhandledPayload, nil)
 			},
 		},
@@ -711,7 +692,7 @@ func TestHandleOnionMessage(t *testing.T) {
 			}
 
 			kit := &onionMessageKit{
-				processOnion:    testCase.processOnion,
+				processOnion:    mock.processOnion,
 				decodePayload:   mock.DecodePayload,
 				decryptDataBlob: mock.DecryptBlob,
 				forwardMessage:  mock.ForwardMessage,

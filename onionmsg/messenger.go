@@ -658,11 +658,32 @@ func (m *Messenger) registerHandler(request *registerHandler) error {
 	return nil
 }
 
-// processOnion uses the messenger's router to process onion messages.
-func (m *Messenger) processOnion(onionPkt *sphinx.OnionPacket,
-	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error) {
+// processOnion decodes onion messages and decrypts them using the messenger's
+// router.
+func (m *Messenger) processOnion(data []byte) (*btcec.PublicKey,
+	*sphinx.ProcessedPacket, error) {
 
-	return m.router.ProcessOnionPacket(onionPkt, nil, 0, blindingPoint)
+	onionMsg := lnwire.OnionMessage{}
+	if err := onionMsg.Decode(bytes.NewBuffer(data), 0); err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrBadMessage, err)
+	}
+
+	// The onion blob portion of our message holds the actual onion.
+	onionPktBytes := bytes.NewBuffer(onionMsg.OnionBlob)
+
+	onionPkt := &sphinx.OnionPacket{}
+	if err := onionPkt.Decode(onionPktBytes); err != nil {
+		return nil, nil, fmt.Errorf("%w:%v", ErrBadOnionBlob, err)
+	}
+
+	processed, err := m.router.ProcessOnionPacket(
+		onionPkt, nil, 0, onionMsg.BlindingPoint,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("process packet: %w", err)
+	}
+
+	return onionMsg.BlindingPoint, processed, nil
 }
 
 // forwardMessage forwards an onion packet to the next node provided.
@@ -709,8 +730,8 @@ func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
 // onionMessageKit contains the dependencies required to process onion messages.
 type onionMessageKit struct {
 	// processOnion provides the ability to process incoming onion messages.
-	processOnion func(*sphinx.OnionPacket, *btcec.PublicKey) (
-		*sphinx.ProcessedPacket, error)
+	processOnion func([]byte) (*btcec.PublicKey, *sphinx.ProcessedPacket,
+		error)
 
 	// decodePayload provides the ability to process onion messages
 	// payloads.
@@ -743,22 +764,7 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 
 	log.Infof("Received onion message from peer: %v", msg.Peer)
 
-	onionMsg := lnwire.OnionMessage{}
-	if err := onionMsg.Decode(bytes.NewBuffer(msg.Data), 0); err != nil {
-		return fmt.Errorf("%w: %v", ErrBadMessage, err)
-	}
-
-	// The onion blob portion of our message holds the actual onion.
-	onionPktBytes := bytes.NewBuffer(onionMsg.OnionBlob)
-
-	onionPkt := &sphinx.OnionPacket{}
-	if err := onionPkt.Decode(onionPktBytes); err != nil {
-		return fmt.Errorf("%w:%v", ErrBadOnionBlob, err)
-	}
-
-	processedPacket, err := kit.processOnion(
-		onionPkt, onionMsg.BlindingPoint,
-	)
+	blinding, processedPacket, err := kit.processOnion(msg.Data)
 	if err != nil {
 		return fmt.Errorf("%w: could not process onion packet: %v",
 			ErrBadOnionBlob, err)
@@ -832,17 +838,14 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 			return ErrNoForwardingOnion
 		}
 
-		data, err := kit.decryptDataBlob(
-			onionMsg.BlindingPoint, payload,
-		)
+		data, err := kit.decryptDataBlob(blinding, payload)
 		if err != nil {
 			return fmt.Errorf("could not decrypt data blob: %w",
 				err)
 		}
 
 		return kit.forwardMessage(
-			data, onionMsg.BlindingPoint,
-			processedPacket.NextPacket,
+			data, blinding, processedPacket.NextPacket,
 		)
 
 	// If we encounter a sphinx failure, just log the error and ignore the
