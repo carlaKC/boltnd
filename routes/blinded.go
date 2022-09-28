@@ -296,8 +296,14 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 	}
 }
 
+// BlindedRouteRequest contains the output of a request for a blinded route.
+type BlindedRouteResponse struct {
+	// OnionMessage is the onion message to be sent on the wire.
+	OnionMessage *lnwire.OnionMessage
+}
+
 // CreateBlindedRoute creates a blinded route from the request provided.
-func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage,
+func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 	error) {
 
 	if err := req.validate(); err != nil {
@@ -337,7 +343,9 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage,
 			err)
 	}
 
-	return onionMsg, nil
+	return &BlindedRouteResponse{
+		OnionMessage: onionMsg,
+	}, nil
 }
 
 // encodeBlindedPayload is the function signature used to encode a TLV stream
