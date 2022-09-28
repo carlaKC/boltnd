@@ -36,6 +36,18 @@ var (
 	// ErrNoRelayingPeers is returned when we have no peers that are
 	// eligible for inclusion in a route with the feature set we require.
 	ErrNoRelayingPeers = errors.New("no relaying peers")
+
+	// ErrNoPath is returned when a request for a blinded route doesn't
+	// have sufficient hops.
+	ErrNoPath = errors.New("at least one hop required in route request")
+
+	// ErrSessionKeyRequired is returned when a session key is missing from
+	// a routes request.
+	ErrSessionKeyRequired = errors.New("session key required")
+
+	// ErrBlindingKeyRequired is returned when a blinding key is missing
+	// from a routes request.
+	ErrBlindingKeyRequired = errors.New("blinding key required")
 )
 
 // BlindedRouteGenerator produces blinded routes.
@@ -255,6 +267,23 @@ type BlindedRouteRequest struct {
 	finalPayloads []*lnwire.FinalHopPayload
 }
 
+// validate performs sanity checks on a request.
+func (r *BlindedRouteRequest) validate() error {
+	if len(r.hops) == 0 {
+		return ErrNoPath
+	}
+
+	if r.sessionKey == nil {
+		return ErrSessionKeyRequired
+	}
+
+	if r.blindingKey == nil {
+		return ErrBlindingKeyRequired
+	}
+
+	return nil
+}
+
 // NewBlindedRouteRequest produces a request to create a blinded path.
 func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 	hops []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
@@ -270,7 +299,13 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 }
 
 // CreateBlindedRoute creates a blinded route from the request provided.
-func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage, error) {
+func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage,
+	error) {
+
+	if err := req.validate(); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
 	hops, err := createPathToBlind(req.hops, encodeBlindedData)

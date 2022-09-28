@@ -666,3 +666,59 @@ func TestBlindedToSphinx(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateRoutesRequest tests validation of requests for blinded route
+// creation.
+func TestValidateRoutesRequest(t *testing.T) {
+	privKeys := testutils.GetPrivkeys(t, 2)
+
+	tests := []struct {
+		name    string
+		request *BlindedRouteRequest
+		err     error
+	}{
+		{
+			name:    "no hops",
+			request: &BlindedRouteRequest{},
+			err:     ErrNoPath,
+		},
+		{
+			name: "no session key",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					privKeys[0].PubKey(),
+				},
+			},
+			err: ErrSessionKeyRequired,
+		},
+		{
+			name: "no blinding key",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					privKeys[0].PubKey(),
+				},
+				sessionKey: privKeys[0],
+			},
+			err: ErrBlindingKeyRequired,
+		},
+		{
+			name: "valid",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					privKeys[0].PubKey(),
+				},
+				sessionKey:  privKeys[0],
+				blindingKey: privKeys[1],
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.request.validate()
+			require.True(t, errors.Is(err, testCase.err))
+		})
+	}
+}
