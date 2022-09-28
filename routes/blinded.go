@@ -308,6 +308,19 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 	}
 }
 
+// blindedStart returns information about a request's introduction node, if it
+// has one.
+func (r *BlindedRouteRequest) blindedStart() *blindedStart {
+	if r.blindedDestination == nil {
+		return nil
+	}
+
+	return &blindedStart{
+		unblindedID:   r.blindedDestination.FirstNodeID,
+		blindingPoint: r.blindedStart().blindingPoint,
+	}
+}
+
 // BlindedRouteRequest contains the output of a request for a blinded route.
 type BlindedRouteResponse struct {
 	// OnionMessage is the onion message to be sent on the wire.
@@ -398,7 +411,9 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
-	hops, err := createPathToBlind(req.hops, req.encodeBlindedData)
+	hops, err := createPathToBlind(
+		req.hops, req.blindedStart(), req.encodeBlindedData,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("path to blind: %w", err)
 	}
@@ -439,6 +454,11 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 // of blinded route data for onion messages.
 type encodeBlindedPayload func(*lnwire.BlindedRouteData) ([]byte, error)
 
+type blindedStart struct {
+	unblindedID   *btcec.PublicKey
+	blindingPoint *btcec.PublicKey
+}
+
 // createPathToBlind takes a set of public keys and creates a set of hops in
 // a blinded route. The first node in the route is considered to be the
 // introduction node N(0), and all nodes after it are denoted N(1), N(2), etc.
@@ -452,12 +472,19 @@ type encodeBlindedPayload func(*lnwire.BlindedRouteData) ([]byte, error)
 // ...
 // [k] NodePub: N(k)
 //
+// If an introduction node to a blinded path is provided, the path needs to be
+// connected to its introduction node and the ephemeral key override included
+// in the final payload of the path:
+// ...
+// [k] NodePub: N(K)
+//     Payload: TLV( next_node_id: intro , override: blinding_point )
+//
 // An encodePayload function is passed in as a parameter for easy mocking in
 // tests.
 //
 // Note that this function currently sends empty onion messages to peers (no
 // TLVs in the final hop).
-func createPathToBlind(path []*btcec.PublicKey,
+func createPathToBlind(path []*btcec.PublicKey, blindedStart *blindedStart,
 	encodePayload encodeBlindedPayload) ([]*sphinx.BlindedPathHop, error) {
 
 	hopCount := len(path)
@@ -490,6 +517,23 @@ func createPathToBlind(path []*btcec.PublicKey,
 		// Add our hop to the set of blinded hops.
 		hopsToBlind[i] = &sphinx.BlindedPathHop{
 			NodePub: path[i],
+		}
+	}
+
+	// If we need to connect this path to a blinded path, we add a payload
+	// for the last hop in our path pointing it to the introduction node
+	// and providing the ephemeral key to switch out.
+	if blindedStart != nil {
+		data := &lnwire.BlindedRouteData{
+			NextNodeID:           blindedStart.unblindedID,
+			NextBlindingOverride: blindedStart.blindingPoint,
+		}
+
+		var err error
+		hopsToBlind[hopCount-1].Payload, err = encodePayload(data)
+		if err != nil {
+			return nil, fmt.Errorf("ephemeral switch out node: %v",
+				err)
 		}
 	}
 
