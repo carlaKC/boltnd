@@ -257,6 +257,9 @@ type BlindedRouteRequest struct {
 	// blindPath blinds the set of hops provided.
 	blindPath func(*btcec.PrivateKey, []*sphinx.BlindedPathHop) (
 		*sphinx.BlindedPath, error)
+
+	// encodeBlindedData encodes data for blinded route blobs.
+	encodeBlindedData func(*lnwire.BlindedRouteData) ([]byte, error)
 }
 
 // validate performs sanity checks on a request.
@@ -288,7 +291,8 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 		replyPath:     replyPath,
 		finalPayloads: finalPayloads,
 		// Fill in functions that we need for non-test path building.
-		blindPath: sphinx.BuildBlindedPath,
+		blindPath:         sphinx.BuildBlindedPath,
+		encodeBlindedData: encodeBlindedData,
 	}
 }
 
@@ -302,7 +306,7 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage,
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
-	hops, err := createPathToBlind(req.hops, encodeBlindedData)
+	hops, err := createPathToBlind(req.hops, req.encodeBlindedData)
 	if err != nil {
 		return nil, fmt.Errorf("path to blind: %w", err)
 	}
