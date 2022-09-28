@@ -60,9 +60,9 @@ func NewBlindedRouteGenerator(lnd Lnd,
 	}
 }
 
-// BlindedRoute produces a blinded route to our node with the set of features
+// ReplyPath produces a blinded route to our node with the set of features
 // requested.
-func (b *BlindedRouteGenerator) BlindedRoute(ctx context.Context,
+func (b *BlindedRouteGenerator) ReplyPath(ctx context.Context,
 	features []lndwire.FeatureBit) (*sphinx.BlindedPath, error) {
 
 	canRelay := createRelayCheck(features)

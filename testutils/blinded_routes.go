@@ -21,8 +21,8 @@ func NewMockRouteGenerator() *MockRouteGenerator {
 	}
 }
 
-// BlindedRoute mocks creation of a blinded route.
-func (m *MockRouteGenerator) BlindedRoute(ctx context.Context,
+// ReplyPath mocks creation of a blinded route.
+func (m *MockRouteGenerator) ReplyPath(ctx context.Context,
 	features []lndwire.FeatureBit) (*sphinx.BlindedPath, error) {
 
 	args := m.Mock.MethodCalled("BlindedRoute", ctx, features)
