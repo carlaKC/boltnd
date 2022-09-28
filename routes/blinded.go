@@ -300,6 +300,10 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 type BlindedRouteResponse struct {
 	// OnionMessage is the onion message to be sent on the wire.
 	OnionMessage *lnwire.OnionMessage
+
+	// FirstNode is the unblinded public key of the node that the onion
+	// message should be sent to.
+	FirstNode *btcec.PublicKey
 }
 
 // CreateBlindedRoute creates a blinded route from the request provided.
@@ -309,6 +313,11 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 	if err := req.validate(); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
+
+	// Save the unblinded pubkey of the first node we need to connect to.
+	// We save this value so that we can tell the caller who to dispatch
+	// the message to.
+	firstNode := req.hops[0]
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
@@ -345,6 +354,7 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 
 	return &BlindedRouteResponse{
 		OnionMessage: onionMsg,
+		FirstNode:    firstNode,
 	}, nil
 }
 
