@@ -36,6 +36,11 @@ var (
 	// ErrNoRelayingPeers is returned when we have no peers that are
 	// eligible for inclusion in a route with the feature set we require.
 	ErrNoRelayingPeers = errors.New("no relaying peers")
+
+	// ErrNoIntroductionNode is returned when our introduction node is not
+	// the final hop in a path provided for a send to a blinded route.
+	ErrNoIntroductionNode = errors.New("introduction node should be " +
+		"final hop when sending to a blinded path")
 )
 
 // BlindedRouteGenerator produces blinded routes.
@@ -243,12 +248,18 @@ type BlindedRouteRequest struct {
 	// route.
 	blindingKey *btcec.PrivateKey
 
-	// Hops is the set of un-blinded hops in the route.
+	// Hops is the set of un-blinded hops in the route. Note that if a
+	// blinded destination is provided, we expect the last hop in this
+	// route to be the introduction node.
 	hops []*btcec.PublicKey
 
 	// ReplyPath is an optional reply path to include to allow recipients
 	// to respond to our message.
 	replyPath *lnwire.ReplyPath
+
+	// blindedDestination is an optional reply path that we want to send
+	// this message to.
+	blindedDestination *lnwire.ReplyPath
 
 	// FinalPayloads contains any payloads intended for the last hop in
 	// the route.
@@ -281,15 +292,16 @@ func (r *BlindedRouteRequest) validate() error {
 
 // NewBlindedRouteRequest produces a request to create a blinded path.
 func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
-	hops []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
+	hops []*btcec.PublicKey, replyPath, blindedDest *lnwire.ReplyPath,
 	finalPayloads []*lnwire.FinalHopPayload) *BlindedRouteRequest {
 
 	return &BlindedRouteRequest{
-		sessionKey:    sessionKey,
-		blindingKey:   blindingKey,
-		hops:          hops,
-		replyPath:     replyPath,
-		finalPayloads: finalPayloads,
+		sessionKey:         sessionKey,
+		blindingKey:        blindingKey,
+		hops:               hops,
+		replyPath:          replyPath,
+		blindedDestination: blindedDest,
+		finalPayloads:      finalPayloads,
 		// Fill in functions that we need for non-test path building.
 		blindPath:         sphinx.BuildBlindedPath,
 		encodeBlindedData: encodeBlindedData,
@@ -318,6 +330,71 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 	// We save this value so that we can tell the caller who to dispatch
 	// the message to.
 	firstNode := req.hops[0]
+
+	// When we have a blinded destination included, we expect our
+	// introduction node to be the last node in the set of hops provided.
+	// We don't actually want to blind the introduction node (because we
+	// already have its blinded pubkey + encrypted data blob from the reply
+	// path). Here, we sanity check that the introduction node is indeed the
+	// last node in the set of hops and then trim it from the route.
+	if req.blindedDestination != nil {
+		hopCount := len(req.hops)
+		lastHop := req.hops[hopCount-1]
+		introNode := req.blindedDestination.FirstNodeID
+
+		// Sanity check that our last hop is the intro node.
+		if lastHop != introNode {
+			return nil, fmt.Errorf("%w: expected: %x, got: %x",
+				ErrNoIntroductionNode,
+				introNode.SerializeCompressed(),
+				lastHop.SerializeCompressed())
+		}
+
+		// Trim our introduction node off of the set of hops to be
+		// blinded.
+		req.hops = req.hops[:hopCount-1]
+
+		// Once we've trimmed our introduction node, we may have no
+		// hops left if we were directly connected to the introduction
+		// node (since our path would have just been a single hop to
+		// that node). In this edge case, we can just send our onion
+		// message to the blinded path provided, since we're not
+		// pre-pending any other hops to it.
+		if len(req.hops) == 0 {
+			var sphinxPath sphinx.PaymentPath
+
+			for i, hop := range req.blindedDestination.Hops {
+				sphinxHop, err := createSphinxHop(
+					*hop.BlindedNodeID,
+					&lnwire.OnionMessagePayload{
+						EncryptedData: hop.EncryptedData,
+					},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("sphinx hop "+
+						"%v: %w", i, err)
+				}
+
+				sphinxPath[i] = *sphinxHop
+			}
+
+			// Note: we still use our session key for the onion
+			// packet, but provide the blinded reply path's point.
+			onionMsg, err := createOnionMessage(
+				nil, req.sessionKey,
+				req.blindedDestination.BlindingPoint,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("onion message to "+
+					"blinded path: %w", err)
+			}
+
+			return &BlindedRouteResponse{
+				OnionMessage: onionMsg,
+				FirstNode:    firstNode,
+			}, nil
+		}
+	}
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
