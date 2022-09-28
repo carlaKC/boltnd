@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
+	"github.com/carlakc/boltnd/routes"
 	"github.com/lightninglabs/lndclient"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
@@ -371,20 +372,15 @@ func (m *Messenger) SendMessage(ctx context.Context,
 		req.Peer.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
-	// Create a set of hops and corresponding blobs to be encrypted which
-	// form the route for our blinded path.
-	hops, err := createPathToBlind(path, encodeBlindedData)
-	if err != nil {
-		return fmt.Errorf("path to blind: %w", err)
-	}
-
-	// Combine our onion hops with the reply path and payloads for the
-	// recipient to create an onion message.
-	onionMsg, err := createOnionMessage(
-		hops, req.ReplyPath, req.FinalPayloads, sessionKey, blindingKey,
+	// Create a request to produce a blinded path and generate a blinded
+	//
+	pathRequest := routes.NewBlindedRouteRequest(
+		sessionKey, blindingKey, path, req.ReplyPath, req.FinalPayloads,
 	)
+
+	onionMsg, err := routes.CreateBlindedRoute(pathRequest)
 	if err != nil {
-		return fmt.Errorf("could not create onion message: %w", err)
+		return fmt.Errorf("create blinded route: %w", err)
 	}
 
 	// Finally, convert this onion message to a custom message so that we
