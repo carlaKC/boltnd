@@ -265,6 +265,10 @@ type BlindedRouteRequest struct {
 	// FinalPayloads contains any payloads intended for the last hop in
 	// the route.
 	finalPayloads []*lnwire.FinalHopPayload
+
+	// blindPath blinds the set of hops provided.
+	blindPath func(*btcec.PrivateKey, []*sphinx.BlindedPathHop) (
+		*sphinx.BlindedPath, error)
 }
 
 // validate performs sanity checks on a request.
@@ -295,6 +299,8 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 		hops:          hops,
 		replyPath:     replyPath,
 		finalPayloads: finalPayloads,
+		// Fill in functions that we need for non-test path building.
+		blindPath: sphinx.BuildBlindedPath,
 	}
 }
 
@@ -315,7 +321,7 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage,
 
 	// Create a blinded route from our set of hops, encrypting blobs and
 	// blinding node keys as required.
-	blindedPath, err := sphinx.BuildBlindedPath(req.blindingKey, hops)
+	blindedPath, err := req.blindPath(req.blindingKey, hops)
 	if err != nil {
 		return nil, fmt.Errorf("blinded path: %w", err)
 	}
