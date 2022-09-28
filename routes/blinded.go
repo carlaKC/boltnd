@@ -255,6 +255,23 @@ type BlindedRouteRequest struct {
 	finalPayloads []*lnwire.FinalHopPayload
 }
 
+// validate performs sanity checks on a request.
+func (r *BlindedRouteRequest) validate() error {
+	if len(r.hops) == 0 {
+		return errors.New("at least one hop required")
+	}
+
+	if r.sessionKey == nil {
+		return errors.New("session key required")
+	}
+
+	if r.blindingKey == nil {
+		return errors.New("blinding key required")
+	}
+
+	return nil
+}
+
 // NewBlindedRouteRequest produces a request to create a blinded path.
 func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 	hops []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
@@ -270,7 +287,13 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 }
 
 // CreateBlindedRoute creates a blinded route from the request provided.
-func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage, error) {
+func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage,
+	error) {
+
+	if err := req.validate(); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
 	hops, err := createPathToBlind(req.hops, encodeBlindedData)
