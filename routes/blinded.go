@@ -313,14 +313,30 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*lnwire.OnionMessage,
 		return nil, fmt.Errorf("path to blind: %w", err)
 	}
 
+	// Create a blinded route from our set of hops, encrypting blobs and
+	// blinding node keys as required.
+	blindedPath, err := sphinx.BuildBlindedPath(req.blindingKey, hops)
+	if err != nil {
+		return nil, fmt.Errorf("blinded path: %w", err)
+	}
+
+	// Convert that blinded path to a sphinx path, adding in our reply
+	// path and final payloads if required.
+	sphinxPath, err := blindedToSphinx(
+		blindedPath, req.replyPath, req.finalPayloads,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create sphinx path: %w", err)
+	}
+
 	// Combine our onion hops with the reply path and payloads for the
 	// recipient to create an onion message.
 	onionMsg, err := createOnionMessage(
-		hops, req.replyPath, req.finalPayloads, req.sessionKey,
-		req.blindingKey,
+		sphinxPath, req.sessionKey, req.blindingKey.PubKey(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("could not create onion message: %w", err)
+		return nil, fmt.Errorf("could not create onion message: %w",
+			err)
 	}
 
 	return onionMsg, nil
@@ -449,30 +465,14 @@ func encodeBlindedData(data *lnwire.BlindedRouteData) ([]byte, error) {
 	return bytes, nil
 }
 
-// createOnionMessage creates an onion message, blinding the nodes in the path
-// provided and including relevant TLVs for blinded relay of messages.
-func createOnionMessage(hops []*sphinx.BlindedPathHop,
-	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
-	sessionKey, blindingKey *btcec.PrivateKey) (*lnwire.OnionMessage,
-	error) {
+// createOnionMessage creates an onion message from the sphinx path provided.
+func createOnionMessage(sphinxPath *sphinx.PaymentPath,
+	sessionKey *btcec.PrivateKey,
+	blindingPoint *btcec.PublicKey) (*lnwire.OnionMessage, error) {
 
-	// Create a blinded route from our set of hops, encrypting blobs and
-	// blinding node keys as required.
-	blindedPath, err := sphinx.BuildBlindedPath(blindingKey, hops)
-	if err != nil {
-		return nil, fmt.Errorf("blinded path: %w", err)
-	}
-
-	sphinxPath, err := blindedToSphinx(
-		blindedPath, replyPath, finalPayloads,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("could not create sphinx path: %w", err)
-	}
-
-	// Finally, we want to case this all up in an onion.
+	// Create an onion packet with no associated data (not required by the
+	// spec).
 	onionPacket, err := sphinx.NewOnionPacket(
-		// TODO: check whether we need associated data.
 		sphinxPath, sessionKey, nil, sphinx.DeterministicPacketFiller,
 	)
 	if err != nil {
@@ -485,6 +485,6 @@ func createOnionMessage(hops []*sphinx.BlindedPathHop,
 	}
 
 	return lnwire.NewOnionMessage(
-		blindedPath.BlindingPoint, buf.Bytes(),
+		blindingPoint, buf.Bytes(),
 	), nil
 }
