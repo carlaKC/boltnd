@@ -358,19 +358,28 @@ func TestBuildBlindedRoute(t *testing.T) {
 }
 
 // mockedPayloadEncode is a mocked encode function for blinded hop paylaods
-// which just returns the compressed serialization of the public key provided.
+// which just returns the compressed serialization of the public key provided,
+// appending the blinding override if it is set.
 func mockedPayloadEncode(data *lnwire.BlindedRouteData) ([]byte, error) {
-	return data.NextNodeID.SerializeCompressed(), nil
+	if data.NextBlindingOverride == nil {
+		return data.NextNodeID.SerializeCompressed(), nil
+	}
+
+	return append(
+		data.NextNodeID.SerializeCompressed(),
+		data.NextBlindingOverride.SerializeCompressed()...,
+	), nil
 }
 
 // TestCreatePathToBlind tests formation of blinded route paths from a set of
 // pubkeys.
 func TestCreatePathToBlind(t *testing.T) {
-	pubkeys := testutils.GetPubkeys(t, 3)
+	pubkeys := testutils.GetPubkeys(t, 4)
 
 	tests := []struct {
 		name         string
 		route        []*btcec.PublicKey
+		blindedStart *blindedStart
 		expectedPath []*sphinx.BlindedPathHop
 	}{
 		{
@@ -408,12 +417,39 @@ func TestCreatePathToBlind(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "blinded start included",
+			route: []*btcec.PublicKey{
+				pubkeys[0],
+				pubkeys[1],
+			},
+			blindedStart: &blindedStart{
+				unblindedID:   pubkeys[2],
+				blindingPoint: pubkeys[3],
+			},
+			expectedPath: []*sphinx.BlindedPathHop{
+				{
+					NodePub: pubkeys[0],
+					Payload: pubkeys[1].SerializeCompressed(),
+				},
+				{
+					NodePub: pubkeys[1],
+					// Expect the unblinded node's ID and
+					// blinding point to be included.
+					Payload: append(
+						pubkeys[2].SerializeCompressed(),
+						pubkeys[3].SerializeCompressed()...,
+					),
+				},
+			},
+		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			actualPath, err := createPathToBlind(
-				testCase.route, mockedPayloadEncode,
+				testCase.route, testCase.blindedStart,
+				mockedPayloadEncode,
 			)
 			require.NoError(t, err, "create path")
 
