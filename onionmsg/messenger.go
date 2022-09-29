@@ -311,6 +311,13 @@ type SendMessageRequest struct {
 	DirectConnect bool
 }
 
+// targetPeer returns the peer that we need to find a route to for an onion
+// message. This may not be the peer the message is ultimately delivered to
+// because we could be sending to an introduction node in a blinded path.
+func (s *SendMessageRequest) targetPeer() *btcec.PublicKey {
+	return s.Peer
+}
+
 // NewSendMessageRequest creates an onion message request.
 func NewSendMessageRequest(destination *btcec.PublicKey,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
@@ -344,20 +351,24 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
-	var path []*btcec.PublicKey
+	var (
+		path   []*btcec.PublicKey
+		target = req.targetPeer()
+	)
+
 	if !req.DirectConnect {
-		path, err = multiHopPath(ctx, m.lnd, req.Peer)
+		path, err = multiHopPath(ctx, m.lnd, target)
 		if err != nil {
 			return fmt.Errorf("could not find path to %v: %w",
-				req.Peer, err)
+				target, err)
 		}
 	} else {
-		if err := m.lookupAndConnect(ctx, req.Peer); err != nil {
+		if err := m.lookupAndConnect(ctx, target); err != nil {
 			return fmt.Errorf("lookup and connect: %w", err)
 		}
 
 		path = []*btcec.PublicKey{
-			req.Peer,
+			target,
 		}
 	}
 
@@ -365,11 +376,11 @@ func (m *Messenger) SendMessage(ctx context.Context,
 	// pass for direct connect, but may fail for multi-hop if no route was
 	// found).
 	if len(path) == 0 {
-		return fmt.Errorf("%w: %v", ErrNoPath, req.Peer)
+		return fmt.Errorf("%w: %v", ErrNoPath, target)
 	}
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
-		req.Peer.SerializeCompressed(),
+		target.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
 	// Create a request to produce a blinded path and generate a blinded
