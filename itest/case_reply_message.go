@@ -52,6 +52,12 @@ func ReplyMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	cancel()
 	require.NoError(t, err, "reply path")
 
+	// We expect a simple reply path: Carol (intro) --> Dave because our
+	// selection is very simple (read: stupid + bad for privacy). Sanity
+	// assert that Carol is the intro node.
+	require.Equal(t, replyPath.Route.IntroductionNode, carol.PubKey[:],
+		"expected carol introduction node")
+
 	// Now subscribe to onion payloads received by dave. We don't add a
 	// timeout on this subscription, but rather just cancel it at the end
 	// of the test.
@@ -97,6 +103,25 @@ func ReplyMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
 	// that we get the payload we expect.
 	consumeMessage(client)
 	msg, err := receiveMessage()
-	require.NoError(t, err, "receive message")
+	require.NoError(t, err, "receive message 1")
 	require.Equal(t, data, msg.Value)
+
+	// Next, test the edge case where we are directly connected to the
+	// introduction node of a reply path. We do this by sending from
+	// Bob -> Carol (intro) -> Dave along the reply path we generated
+	// above. We've already sanity checked that Carol is indeed the
+	// introduction node above.
+	newData := []byte{1, 2, 3}
+	req.FinalPayloads[subReq.TlvType] = newData
+
+	ctxt, cancel = context.WithTimeout(ctxb, defaultTimeout)
+	_, err = offersTest.bobOffers.SendOnionMessage(ctxt, req)
+	require.NoError(t, err)
+	cancel()
+
+	// Wait to receive the next message and assert that it has our new data.
+	consumeMessage(client)
+	msg, err = receiveMessage()
+	require.NoError(t, err, "receive message 2")
+	require.Equal(t, newData, msg.Value)
 }
