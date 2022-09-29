@@ -374,7 +374,8 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Create a request to produce a blinded path and generate a blinded
 	pathRequest := routes.NewBlindedRouteRequest(
-		sessionKey, blindingKey, path, req.ReplyPath, req.FinalPayloads,
+		sessionKey, blindingKey, path, req.ReplyPath, nil,
+		req.FinalPayloads,
 	)
 
 	pathResponse, err := routes.CreateBlindedRoute(pathRequest)

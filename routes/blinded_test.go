@@ -671,6 +671,7 @@ func TestBlindedToSphinx(t *testing.T) {
 // creation.
 func TestValidateRoutesRequest(t *testing.T) {
 	privKeys := testutils.GetPrivkeys(t, 2)
+	pubKeys := testutils.GetPubkeys(t, 2)
 
 	tests := []struct {
 		name    string
@@ -702,10 +703,39 @@ func TestValidateRoutesRequest(t *testing.T) {
 			err: ErrBlindingKeyRequired,
 		},
 		{
-			name: "valid",
+			name: "valid - no blinded",
 			request: &BlindedRouteRequest{
 				hops: []*btcec.PublicKey{
 					privKeys[0].PubKey(),
+				},
+				sessionKey:  privKeys[0],
+				blindingKey: privKeys[1],
+			},
+		},
+		{
+			name: "introduction node not last hop",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					pubKeys[0],
+					pubKeys[1],
+				},
+				blindedDestination: &lnwire.ReplyPath{
+					FirstNodeID: pubKeys[0],
+				},
+				sessionKey:  privKeys[0],
+				blindingKey: privKeys[1],
+			},
+			err: ErrNoIntroductionNode,
+		},
+		{
+			name: "valid - with blinded",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					pubKeys[0],
+					pubKeys[1],
+				},
+				blindedDestination: &lnwire.ReplyPath{
+					FirstNodeID: pubKeys[1],
 				},
 				sessionKey:  privKeys[0],
 				blindingKey: privKeys[1],

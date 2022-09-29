@@ -48,6 +48,11 @@ var (
 	// ErrBlindingKeyRequired is returned when a blinding key is missing
 	// from a routes request.
 	ErrBlindingKeyRequired = errors.New("blinding key required")
+
+	// ErrNoIntroductionNode is returned when our introduction node is not
+	// the final hop in a path provided for a send to a blinded route.
+	ErrNoIntroductionNode = errors.New("introduction node should be " +
+		"final hop when sending to a blinded path")
 )
 
 // BlindedRouteGenerator produces blinded routes.
@@ -255,12 +260,18 @@ type BlindedRouteRequest struct {
 	// route.
 	blindingKey *btcec.PrivateKey
 
-	// Hops is the set of un-blinded hops in the route.
+	// Hops is the set of un-blinded hops in the route. Note that if a
+	// blinded destination is provided, we expect the last hop in this
+	// route to be the introduction node.
 	hops []*btcec.PublicKey
 
 	// ReplyPath is an optional reply path to include to allow recipients
 	// to respond to our message.
 	replyPath *lnwire.ReplyPath
+
+	// blindedDestination is an optional reply path that we want to send
+	// this message to.
+	blindedDestination *lnwire.ReplyPath
 
 	// FinalPayloads contains any payloads intended for the last hop in
 	// the route.
@@ -288,20 +299,43 @@ func (r *BlindedRouteRequest) validate() error {
 		return ErrBlindingKeyRequired
 	}
 
+	// If we don't have a blinded destination, we don't need to perform
+	// any further validation.
+	if r.blindedDestination == nil {
+		return nil
+	}
+
+	// If we have a blinded destination included, we expect the last hop
+	// in our un-blinded hops to be the introduction node because we are
+	// connecting our un-blinded route to the blinded route.
+	lastHop := r.hops[len(r.hops)-1]
+	introNode := r.blindedDestination.FirstNodeID
+
+	if !bytes.Equal(
+		lastHop.SerializeCompressed(),
+		introNode.SerializeCompressed(),
+	) {
+		return fmt.Errorf("%w: expected: %x, got: %x",
+			ErrNoIntroductionNode,
+			introNode.SerializeCompressed(),
+			lastHop.SerializeCompressed())
+	}
+
 	return nil
 }
 
 // NewBlindedRouteRequest produces a request to create a blinded path.
 func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
-	hops []*btcec.PublicKey, replyPath *lnwire.ReplyPath,
+	hops []*btcec.PublicKey, replyPath, blindedDest *lnwire.ReplyPath,
 	finalPayloads []*lnwire.FinalHopPayload) *BlindedRouteRequest {
 
 	return &BlindedRouteRequest{
-		sessionKey:    sessionKey,
-		blindingKey:   blindingKey,
-		hops:          hops,
-		replyPath:     replyPath,
-		finalPayloads: finalPayloads,
+		sessionKey:         sessionKey,
+		blindingKey:        blindingKey,
+		hops:               hops,
+		replyPath:          replyPath,
+		blindedDestination: blindedDest,
+		finalPayloads:      finalPayloads,
 		// Fill in functions that we need for non-test path building.
 		blindPath:         sphinx.BuildBlindedPath,
 		encodeBlindedData: encodeBlindedData,
