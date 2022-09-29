@@ -283,6 +283,12 @@ type BlindedRouteRequest struct {
 
 	// encodeBlindedData encodes data for blinded route blobs.
 	encodeBlindedData func(*lnwire.BlindedRouteData) ([]byte, error)
+
+	// directToBlinded returns a response for the edge case where we are
+	// directly connected to the introduction node in our blinded
+	// destination.
+	directToBlinded func(*BlindedRouteRequest) (*BlindedRouteResponse,
+		error)
 }
 
 // validate performs sanity checks on a request.
@@ -339,6 +345,7 @@ func NewBlindedRouteRequest(sessionKey, blindingKey *btcec.PrivateKey,
 		// Fill in functions that we need for non-test path building.
 		blindPath:         sphinx.BuildBlindedPath,
 		encodeBlindedData: encodeBlindedData,
+		directToBlinded:   directToBlinded,
 	}
 }
 
@@ -364,6 +371,28 @@ func CreateBlindedRoute(req *BlindedRouteRequest) (*BlindedRouteResponse,
 	// We save this value so that we can tell the caller who to dispatch
 	// the message to.
 	firstNode := req.hops[0]
+
+	// We don't actually want to blind the introduction node (because we
+	// already have its blinded pubkey + encrypted data blob from the reply
+	// path). Here, we sanity check that the introduction node is indeed the
+	// last node in the set of hops and then trim it from the route.
+	if req.blindedDestination != nil {
+		// Trim our introduction node off of the set of hops to be
+		// blinded (we've already checked in validation that this is
+		// indeed the final hop).
+		hopCount := len(req.hops)
+		req.hops = req.hops[:hopCount-1]
+
+		// Once we've trimmed our introduction node, we may have no
+		// hops left if we were directly connected to the introduction
+		// node (since our path would have just been a single hop to
+		// that node). In this edge case, we can just send our onion
+		// message to the blinded path provided, since we're not
+		// pre-pending any other hops to it.
+		if len(req.hops) == 0 {
+			return req.directToBlinded(req)
+		}
+	}
 
 	// Create a set of hops and corresponding blobs to be encrypted which
 	// form the route for our blinded path.
@@ -562,4 +591,44 @@ func createOnionMessage(sphinxPath *sphinx.PaymentPath,
 	return lnwire.NewOnionMessage(
 		blindingPoint, buf.Bytes(),
 	), nil
+}
+
+// directToBlinded returns a route response when we are just sending directly
+// to the blinded destination we have been provided. This covers the edge case
+// where we happen to be connected to the introduction node selected by the
+// recipient, and we don't need to append any of our hops onto the blinded
+// route.
+func directToBlinded(req *BlindedRouteRequest) (*BlindedRouteResponse, error) {
+	var sphinxPath sphinx.PaymentPath
+
+	for i, hop := range req.blindedDestination.Hops {
+		sphinxHop, err := createSphinxHop(
+			*hop.BlindedNodeID,
+			&lnwire.OnionMessagePayload{
+				EncryptedData: hop.EncryptedData,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("sphinx hop "+
+				"%v: %w", i, err)
+		}
+
+		sphinxPath[i] = *sphinxHop
+	}
+
+	// Note: we still use our session key for the onion
+	// packet, but provide the blinded reply path's point.
+	onionMsg, err := createOnionMessage(
+		&sphinxPath, req.sessionKey,
+		req.blindedDestination.BlindingPoint,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("onion message to "+
+			"blinded path: %w", err)
+	}
+
+	return &BlindedRouteResponse{
+		OnionMessage: onionMsg,
+		FirstNode:    req.blindedDestination.FirstNodeID,
+	}, nil
 }
