@@ -48,7 +48,7 @@ func TestRPCSendOnionMessage(t *testing.T) {
 			// Setup our mock to fail sending a message.
 			setupMock: func(m *mock.Mock) {
 				req := onionmsg.NewSendMessageRequest(
-					pubkey, nil, nil, true,
+					pubkey, nil, nil, []*lnwire.FinalHopPayload{}, true,
 				)
 
 				mockSendMessage(m, req, errors.New("mock"))
@@ -65,7 +65,7 @@ func TestRPCSendOnionMessage(t *testing.T) {
 			// Setup our mock to successfully send the message.
 			setupMock: func(m *mock.Mock) {
 				req := onionmsg.NewSendMessageRequest(
-					pubkey, nil, nil, false,
+					pubkey, nil, nil, []*lnwire.FinalHopPayload{}, false,
 				)
 
 				mockSendMessage(m, req, nil)
@@ -84,7 +84,7 @@ func TestRPCSendOnionMessage(t *testing.T) {
 				}
 
 				req := onionmsg.NewSendMessageRequest(
-					pubkey, nil, finalPayloads, true,
+					pubkey, nil, nil, finalPayloads, true,
 				)
 
 				mockSendMessage(m, req, nil)

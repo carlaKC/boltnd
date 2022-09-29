@@ -318,7 +318,7 @@ func testSendMessage(t *testing.T, testCase sendMessageTest) {
 
 	ctxb := context.Background()
 	req := NewSendMessageRequest(
-		testCase.peer, nil, nil, testCase.directConnect,
+		testCase.peer, nil, nil, nil, testCase.directConnect,
 	)
 
 	err := messenger.SendMessage(ctxb, req)
@@ -1051,6 +1051,63 @@ func TestMultiHopPath(t *testing.T) {
 			path, err := multiHopPath(ctxb, lnd, testCase.peer)
 			require.True(t, errors.Is(err, testCase.err))
 			require.Equal(t, testCase.path, path)
+		})
+	}
+}
+
+// TestValidateSendMessageRequest tests validation of send message requests.
+func TestValidateSendMessageRequest(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 1)
+
+	tests := []struct {
+		name string
+		req  *SendMessageRequest
+		err  error
+	}{
+		{
+			name: "peer and blinded dest",
+			req: &SendMessageRequest{
+				Peer:               pubkeys[0],
+				BlindedDestination: &lnwire.ReplyPath{},
+			},
+			err: ErrBothDest,
+		},
+		{
+			name: "neither dest set",
+			req:  &SendMessageRequest{},
+			err:  ErrNoDest,
+		},
+		{
+			name: "blinded dest with no hops",
+			req: &SendMessageRequest{
+				BlindedDestination: &lnwire.ReplyPath{},
+			},
+			err: ErrNoBlindedHops,
+		},
+		{
+			name: "valid - cleartext peer",
+			req: &SendMessageRequest{
+				Peer: pubkeys[0],
+			},
+		},
+		{
+			name: "valid - blinded dest",
+			req: &SendMessageRequest{
+				BlindedDestination: &lnwire.ReplyPath{
+					Hops: []*lnwire.BlindedHop{
+						{},
+					},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.req.Validate()
+			require.True(t, errors.Is(err, testCase.err))
 		})
 	}
 }

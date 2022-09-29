@@ -76,6 +76,19 @@ var (
 	// encrypted data blob and one was not provided.
 	ErrNoNextNodeID = errors.New("next node ID required")
 
+	// ErrBothDest is returned when a message request sets more than one
+	// destination type.
+	ErrBothDest = errors.New("cannot set blinded and un-blinded " +
+		"destination")
+
+	// ErrNoDest is returned when no destination for an onion message
+	// is provided.
+	ErrNoDest = errors.New("clear or blinded destination required")
+
+	// ErrNoBlindedHops is returned when we try to send an onion message
+	// to a blinded route with no hops.
+	ErrNoBlindedHops = errors.New("at least one blinded hop required")
+
 	// ErrShuttingDown is returned when the messenger exits.
 	ErrShuttingDown = errors.New("messenger shutting down")
 
@@ -295,8 +308,13 @@ func (m *Messenger) handleRegistration(request *registerHandler,
 // SendMessageRequest contains the request parameters for sending an onion
 // message.
 type SendMessageRequest struct {
-	// Peer is the destination that we are sending the message to.
+	// Peer is the destination that we are sending the message to. This
+	// field and blinded destination are mutually exclusive.
 	Peer *btcec.PublicKey
+
+	// BlindedDestination is a blinded path to the peer that we are sending
+	// the message to. This field and peer are mutually exclusive.
+	BlindedDestination *lnwire.ReplyPath
 
 	// ReplyPath is an optional reply path to our own node, included to
 	// allow the recipient to reply to the message.
@@ -315,19 +333,45 @@ type SendMessageRequest struct {
 // message. This may not be the peer the message is ultimately delivered to
 // because we could be sending to an introduction node in a blinded path.
 func (s *SendMessageRequest) targetPeer() *btcec.PublicKey {
-	return s.Peer
+	if s.BlindedDestination == nil {
+		return s.Peer
+	}
+
+	return s.BlindedDestination.FirstNodeID
+}
+
+// Validate performs validation on send message requests.
+func (s *SendMessageRequest) Validate() error {
+	// Require one, but not both destination options to be set.
+	clearDestSet := s.Peer != nil
+	blindDestSet := s.BlindedDestination != nil
+
+	if clearDestSet && blindDestSet {
+		return ErrBothDest
+	}
+
+	if !(clearDestSet || blindDestSet) {
+		return ErrNoDest
+	}
+
+	if blindDestSet && len(s.BlindedDestination.Hops) == 0 {
+		return ErrNoBlindedHops
+	}
+
+	return nil
 }
 
 // NewSendMessageRequest creates an onion message request.
-func NewSendMessageRequest(destination *btcec.PublicKey,
+func NewSendMessageRequest(destination *btcec.PublicKey, blindedDestination,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
 	directConnect bool) *SendMessageRequest {
 
 	return &SendMessageRequest{
-		Peer:          destination,
-		ReplyPath:     replyPath,
-		FinalPayloads: finalPayloads,
-		DirectConnect: directConnect,
+		Peer:               destination,
+		BlindedDestination: blindedDestination,
+		ReplyPath:          replyPath,
+		FinalPayloads:      finalPayloads,
+		DirectConnect:      directConnect,
 	}
 }
 
@@ -385,8 +429,8 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Create a request to produce a blinded path and generate a blinded
 	pathRequest := routes.NewBlindedRouteRequest(
-		sessionKey, blindingKey, path, req.ReplyPath, nil,
-		req.FinalPayloads,
+		sessionKey, blindingKey, path, req.ReplyPath,
+		req.BlindedDestination, req.FinalPayloads,
 	)
 
 	pathResponse, err := routes.CreateBlindedRoute(pathRequest)
