@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/carlakc/boltnd/lnwire"
+	"github.com/carlakc/boltnd/routes"
 	"github.com/lightninglabs/lndclient"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
@@ -74,6 +75,19 @@ var (
 	// ErrNoNextNodeID is returned when we require a next node id in our
 	// encrypted data blob and one was not provided.
 	ErrNoNextNodeID = errors.New("next node ID required")
+
+	// ErrBothDest is returned when a message request sets more than one
+	// destination type.
+	ErrBothDest = errors.New("cannot set blinded and un-blinded " +
+		"destination")
+
+	// ErrNoDest is returned when no destination for an onion message
+	// is provided.
+	ErrNoDest = errors.New("clear or blinded destination required")
+
+	// ErrNoBlindedHops is returned when we try to send an onion message
+	// to a blinded route with no hops.
+	ErrNoBlindedHops = errors.New("at least one blinded hop required")
 
 	// ErrShuttingDown is returned when the messenger exits.
 	ErrShuttingDown = errors.New("messenger shutting down")
@@ -294,8 +308,13 @@ func (m *Messenger) handleRegistration(request *registerHandler,
 // SendMessageRequest contains the request parameters for sending an onion
 // message.
 type SendMessageRequest struct {
-	// Peer is the destination that we are sending the message to.
+	// Peer is the destination that we are sending the message to. This
+	// field and blinded destination are mutually exclusive.
 	Peer *btcec.PublicKey
+
+	// BlindedDestination is a blinded path to the peer that we are sending
+	// the message to. This field and peer are mutually exclusive.
+	BlindedDestination *lnwire.ReplyPath
 
 	// ReplyPath is an optional reply path to our own node, included to
 	// allow the recipient to reply to the message.
@@ -310,16 +329,49 @@ type SendMessageRequest struct {
 	DirectConnect bool
 }
 
+// targetPeer returns the peer that we need to find a route to for an onion
+// message. This may not be the peer the message is ultimately delivered to
+// because we could be sending to an introduction node in a blinded path.
+func (s *SendMessageRequest) targetPeer() *btcec.PublicKey {
+	if s.BlindedDestination == nil {
+		return s.Peer
+	}
+
+	return s.BlindedDestination.FirstNodeID
+}
+
+// Validate performs validation on send message requests.
+func (s *SendMessageRequest) Validate() error {
+	// Require one, but not both destination options to be set.
+	clearDestSet := s.Peer != nil
+	blindDestSet := s.BlindedDestination != nil
+
+	if clearDestSet && blindDestSet {
+		return ErrBothDest
+	}
+
+	if !(clearDestSet || blindDestSet) {
+		return ErrNoDest
+	}
+
+	if blindDestSet && len(s.BlindedDestination.Hops) == 0 {
+		return ErrNoBlindedHops
+	}
+
+	return nil
+}
+
 // NewSendMessageRequest creates an onion message request.
-func NewSendMessageRequest(destination *btcec.PublicKey,
+func NewSendMessageRequest(destination *btcec.PublicKey, blindedDestination,
 	replyPath *lnwire.ReplyPath, finalPayloads []*lnwire.FinalHopPayload,
 	directConnect bool) *SendMessageRequest {
 
 	return &SendMessageRequest{
-		Peer:          destination,
-		ReplyPath:     replyPath,
-		FinalPayloads: finalPayloads,
-		DirectConnect: directConnect,
+		Peer:               destination,
+		BlindedDestination: blindedDestination,
+		ReplyPath:          replyPath,
+		FinalPayloads:      finalPayloads,
+		DirectConnect:      directConnect,
 	}
 }
 
@@ -343,20 +395,24 @@ func (m *Messenger) SendMessage(ctx context.Context,
 
 	// Select a path for the onion message and directly connect to the peer
 	// if requested.
-	var path []*btcec.PublicKey
+	var (
+		path   []*btcec.PublicKey
+		target = req.targetPeer()
+	)
+
 	if !req.DirectConnect {
-		path, err = multiHopPath(ctx, m.lnd, req.Peer)
+		path, err = multiHopPath(ctx, m.lnd, target)
 		if err != nil {
 			return fmt.Errorf("could not find path to %v: %w",
-				req.Peer, err)
+				target, err)
 		}
 	} else {
-		if err := m.lookupAndConnect(ctx, req.Peer); err != nil {
+		if err := m.lookupAndConnect(ctx, target); err != nil {
 			return fmt.Errorf("lookup and connect: %w", err)
 		}
 
 		path = []*btcec.PublicKey{
-			req.Peer,
+			target,
 		}
 	}
 
@@ -364,32 +420,29 @@ func (m *Messenger) SendMessage(ctx context.Context,
 	// pass for direct connect, but may fail for multi-hop if no route was
 	// found).
 	if len(path) == 0 {
-		return fmt.Errorf("%w: %v", ErrNoPath, req.Peer)
+		return fmt.Errorf("%w: %v", ErrNoPath, target)
 	}
 
 	log.Infof("Onion message to: %x to be delivered via: %x along: %v hops",
-		req.Peer.SerializeCompressed(),
+		target.SerializeCompressed(),
 		path[0].SerializeCompressed(), len(path))
 
-	// Create a set of hops and corresponding blobs to be encrypted which
-	// form the route for our blinded path.
-	hops, err := createPathToBlind(path, encodeBlindedData)
-	if err != nil {
-		return fmt.Errorf("path to blind: %w", err)
-	}
-
-	// Combine our onion hops with the reply path and payloads for the
-	// recipient to create an onion message.
-	onionMsg, err := createOnionMessage(
-		hops, req.ReplyPath, req.FinalPayloads, sessionKey, blindingKey,
+	// Create a request to produce a blinded path and generate a blinded
+	pathRequest := routes.NewBlindedRouteRequest(
+		sessionKey, blindingKey, path, req.ReplyPath,
+		req.BlindedDestination, req.FinalPayloads,
 	)
+
+	pathResponse, err := routes.CreateBlindedRoute(pathRequest)
 	if err != nil {
-		return fmt.Errorf("could not create onion message: %w", err)
+		return fmt.Errorf("create blinded route: %w", err)
 	}
 
 	// Finally, convert this onion message to a custom message so that we
 	// can sent it via lnd's custom message API.
-	msg, err := customOnionMessage(path[0], onionMsg)
+	msg, err := customOnionMessage(
+		pathResponse.FirstNode, pathResponse.OnionMessage,
+	)
 	if err != nil {
 		return fmt.Errorf("could not create custom message: %w", err)
 	}
@@ -658,11 +711,32 @@ func (m *Messenger) registerHandler(request *registerHandler) error {
 	return nil
 }
 
-// processOnion uses the messenger's router to process onion messages.
-func (m *Messenger) processOnion(onionPkt *sphinx.OnionPacket,
-	blindingPoint *btcec.PublicKey) (*sphinx.ProcessedPacket, error) {
+// processOnion decodes onion messages and decrypts them using the messenger's
+// router.
+func (m *Messenger) processOnion(data []byte) (*btcec.PublicKey,
+	*sphinx.ProcessedPacket, error) {
 
-	return m.router.ProcessOnionPacket(onionPkt, nil, 0, blindingPoint)
+	onionMsg := lnwire.OnionMessage{}
+	if err := onionMsg.Decode(bytes.NewBuffer(data), 0); err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrBadMessage, err)
+	}
+
+	// The onion blob portion of our message holds the actual onion.
+	onionPktBytes := bytes.NewBuffer(onionMsg.OnionBlob)
+
+	onionPkt := &sphinx.OnionPacket{}
+	if err := onionPkt.Decode(onionPktBytes); err != nil {
+		return nil, nil, fmt.Errorf("%w:%v", ErrBadOnionBlob, err)
+	}
+
+	processed, err := m.router.ProcessOnionPacket(
+		onionPkt, nil, 0, onionMsg.BlindingPoint,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("process packet: %w", err)
+	}
+
+	return onionMsg.BlindingPoint, processed, nil
 }
 
 // forwardMessage forwards an onion packet to the next node provided.
@@ -676,6 +750,16 @@ func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
 	nextBlinding, err := sphinx.NextEphemeral(m.nodeKeyECDH, blindingPoint)
 	if err != nil {
 		return fmt.Errorf("could not calculate next ephemeral: %w", err)
+	}
+
+	// If we have a blinding override included in our encrypted data, it
+	// should be directly switched out.
+	if data.NextBlindingOverride != nil {
+		log.Infof("Ephemeral switch out: %x for %x",
+			blindingPoint.SerializeCompressed(),
+			data.NextBlindingOverride.SerializeCompressed())
+
+		nextBlinding = data.NextBlindingOverride
 	}
 
 	buf := new(bytes.Buffer)
@@ -695,7 +779,7 @@ func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
 		Data:    buf.Bytes(),
 	}
 
-	log.Infof("Forwarding onion message to: %x, next blinding: %x",
+	log.Infof("Forwarding onion message to: %v, next blinding: %x",
 		customMsg.Peer, nextBlinding.SerializeCompressed())
 
 	err = m.lnd.SendCustomMessage(context.Background(), customMsg)
@@ -709,8 +793,8 @@ func (m *Messenger) forwardMessage(data *lnwire.BlindedRouteData,
 // onionMessageKit contains the dependencies required to process onion messages.
 type onionMessageKit struct {
 	// processOnion provides the ability to process incoming onion messages.
-	processOnion func(*sphinx.OnionPacket, *btcec.PublicKey) (
-		*sphinx.ProcessedPacket, error)
+	processOnion func([]byte) (*btcec.PublicKey, *sphinx.ProcessedPacket,
+		error)
 
 	// decodePayload provides the ability to process onion messages
 	// payloads.
@@ -743,22 +827,7 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 
 	log.Infof("Received onion message from peer: %v", msg.Peer)
 
-	onionMsg := lnwire.OnionMessage{}
-	if err := onionMsg.Decode(bytes.NewBuffer(msg.Data), 0); err != nil {
-		return fmt.Errorf("%w: %v", ErrBadMessage, err)
-	}
-
-	// The onion blob portion of our message holds the actual onion.
-	onionPktBytes := bytes.NewBuffer(onionMsg.OnionBlob)
-
-	onionPkt := &sphinx.OnionPacket{}
-	if err := onionPkt.Decode(onionPktBytes); err != nil {
-		return fmt.Errorf("%w:%v", ErrBadOnionBlob, err)
-	}
-
-	processedPacket, err := kit.processOnion(
-		onionPkt, onionMsg.BlindingPoint,
-	)
+	blinding, processedPacket, err := kit.processOnion(msg.Data)
 	if err != nil {
 		return fmt.Errorf("%w: could not process onion packet: %v",
 			ErrBadOnionBlob, err)
@@ -832,17 +901,14 @@ func handleOnionMessage(msg lndclient.CustomMessage,
 			return ErrNoForwardingOnion
 		}
 
-		data, err := kit.decryptDataBlob(
-			onionMsg.BlindingPoint, payload,
-		)
+		data, err := kit.decryptDataBlob(blinding, payload)
 		if err != nil {
 			return fmt.Errorf("could not decrypt data blob: %w",
 				err)
 		}
 
 		return kit.forwardMessage(
-			data, onionMsg.BlindingPoint,
-			processedPacket.NextPacket,
+			data, blinding, processedPacket.NextPacket,
 		)
 
 	// If we encounter a sphinx failure, just log the error and ignore the

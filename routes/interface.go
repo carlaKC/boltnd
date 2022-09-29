@@ -22,8 +22,8 @@ type Lnd interface {
 
 // Generator is an interface implemented by blinded route producers.
 type Generator interface {
-	// BlindedRoute produces a blinded route to our node with the set of
+	// ReplyPath produces a blinded route to our node with the set of
 	// features requested.
-	BlindedRoute(ctx context.Context,
+	ReplyPath(ctx context.Context,
 		features []lndwire.FeatureBit) (*sphinx.BlindedPath, error)
 }

@@ -5,12 +5,14 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/testutils"
 	"github.com/lightninglabs/lndclient"
 	sphinx "github.com/lightningnetwork/lightning-onion"
 	lndwire "github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/route"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -351,6 +353,522 @@ func TestBuildBlindedRoute(t *testing.T) {
 
 			require.True(t, errors.Is(err, testCase.err))
 			require.Equal(t, route, testCase.route)
+		})
+	}
+}
+
+// mockedPayloadEncode is a mocked encode function for blinded hop paylaods
+// which just returns the compressed serialization of the public key provided,
+// appending the blinding override if it is set.
+func mockedPayloadEncode(data *lnwire.BlindedRouteData) ([]byte, error) {
+	if data.NextBlindingOverride == nil {
+		return data.NextNodeID.SerializeCompressed(), nil
+	}
+
+	return append(
+		data.NextNodeID.SerializeCompressed(),
+		data.NextBlindingOverride.SerializeCompressed()...,
+	), nil
+}
+
+// TestCreatePathToBlind tests formation of blinded route paths from a set of
+// pubkeys.
+func TestCreatePathToBlind(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 4)
+
+	tests := []struct {
+		name         string
+		route        []*btcec.PublicKey
+		blindedStart *blindedStart
+		expectedPath []*sphinx.BlindedPathHop
+	}{
+		{
+			// A single hop blinded path will just have the first
+			// node's pubkey, there is no extra data because they
+			// are the terminal hop.
+			name: "one hop",
+			route: []*btcec.PublicKey{
+				pubkeys[0],
+			},
+			expectedPath: []*sphinx.BlindedPathHop{
+				{
+					NodePub: pubkeys[0],
+				},
+			},
+		},
+		{
+			name: "three hops",
+			route: []*btcec.PublicKey{
+				pubkeys[0],
+				pubkeys[1],
+				pubkeys[2],
+			},
+			expectedPath: []*sphinx.BlindedPathHop{
+				{
+					NodePub: pubkeys[0],
+					Payload: pubkeys[1].SerializeCompressed(),
+				},
+				{
+					NodePub: pubkeys[1],
+					Payload: pubkeys[2].SerializeCompressed(),
+				},
+				{
+					NodePub: pubkeys[2],
+				},
+			},
+		},
+		{
+			name: "blinded start included",
+			route: []*btcec.PublicKey{
+				pubkeys[0],
+				pubkeys[1],
+			},
+			blindedStart: &blindedStart{
+				unblindedID:   pubkeys[2],
+				blindingPoint: pubkeys[3],
+			},
+			expectedPath: []*sphinx.BlindedPathHop{
+				{
+					NodePub: pubkeys[0],
+					Payload: pubkeys[1].SerializeCompressed(),
+				},
+				{
+					NodePub: pubkeys[1],
+					// Expect the unblinded node's ID and
+					// blinding point to be included.
+					Payload: append(
+						pubkeys[2].SerializeCompressed(),
+						pubkeys[3].SerializeCompressed()...,
+					),
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			actualPath, err := createPathToBlind(
+				testCase.route, testCase.blindedStart,
+				mockedPayloadEncode,
+			)
+			require.NoError(t, err, "create path")
+
+			require.Equal(t, testCase.expectedPath, actualPath)
+		})
+	}
+}
+
+// TestBlindedToSphinx tests conversion of a blinded path to a sphinx path.
+func TestBlindedToSphinx(t *testing.T) {
+	pubkeys := testutils.GetPubkeys(t, 4)
+
+	var (
+		// Create encrypted payloads for each hop.
+		encryptedData0 = []byte{0, 0, 0}
+		encryptedData1 = []byte{1, 1, 1}
+		encryptedData2 = []byte{2, 2, 2}
+
+		// Create onion payloads containing our encrypted data for each
+		// hop.
+		onionPayload0 = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData0,
+		}
+
+		onionPayload1 = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData1,
+		}
+
+		onionPayload2 = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData2,
+		}
+
+		// Add an arbitrary final payload intended for the last hop.
+		finalPayload = []*lnwire.FinalHopPayload{
+			{
+				TLVType: tlv.Type(101),
+				Value:   []byte{9, 9, 9},
+			},
+		}
+
+		// Create two payloads which utilize the final payload with
+		// different sets of encrypted data.
+		onion0WithFinal = &lnwire.OnionMessagePayload{
+			EncryptedData:    encryptedData0,
+			FinalHopPayloads: finalPayload,
+		}
+
+		onion1WithFinal = &lnwire.OnionMessagePayload{
+			EncryptedData:    encryptedData1,
+			FinalHopPayloads: finalPayload,
+		}
+
+		// Create a reply path an onion payload including it.
+		replyPath = &lnwire.ReplyPath{
+			FirstNodeID:   pubkeys[0],
+			BlindingPoint: pubkeys[1],
+		}
+
+		onion1WithReplyPath = &lnwire.OnionMessagePayload{
+			EncryptedData: encryptedData1,
+			ReplyPath:     replyPath,
+		}
+	)
+
+	// Finally, encode all payloads for our test as tlv streams.
+	payload0, err := lnwire.EncodeOnionMessagePayload(onionPayload0)
+	require.NoError(t, err, "payload 0")
+
+	payload1, err := lnwire.EncodeOnionMessagePayload(onionPayload1)
+	require.NoError(t, err, "payload 1")
+
+	payload2, err := lnwire.EncodeOnionMessagePayload(onionPayload2)
+	require.NoError(t, err, "payload 2")
+
+	payload0WithFinal, err := lnwire.EncodeOnionMessagePayload(
+		onion0WithFinal,
+	)
+	require.NoError(t, err, "payload 0 with final payload")
+
+	payload1WithFinal, err := lnwire.EncodeOnionMessagePayload(
+		onion1WithFinal,
+	)
+	require.NoError(t, err, "payload 1 with final payload")
+
+	payload1WithReplyPath, err := lnwire.EncodeOnionMessagePayload(
+		onion1WithReplyPath,
+	)
+	require.NoError(t, err, "payload 1 with reply path")
+
+	tests := []struct {
+		name         string
+		blindedPath  *sphinx.BlindedPath
+		extraHops    []*lnwire.BlindedHop
+		replyPath    *lnwire.ReplyPath
+		finalPayload []*lnwire.FinalHopPayload
+		expectedPath *sphinx.PaymentPath
+	}{
+		{
+			// We should use the blinded pubkey for our introduction
+			// node for onion messages.
+			name: "only introduction point",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+				},
+			},
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+			},
+		},
+		{
+			name: "single hop with final payload",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+				},
+			},
+			finalPayload: finalPayload,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0WithFinal,
+					},
+				},
+			},
+		},
+		{
+			name: "two hops with final payload",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0, encryptedData1,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+					pubkeys[2],
+				},
+			},
+			finalPayload: finalPayload,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1WithFinal,
+					},
+				},
+			},
+		},
+		{
+			name: "three hops",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0, encryptedData1,
+					encryptedData2,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+					pubkeys[2],
+					pubkeys[3],
+				},
+			},
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1,
+					},
+				},
+				{
+					NodePub: *pubkeys[3],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload2,
+					},
+				},
+			},
+		},
+		{
+			name: "reply path",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0, encryptedData1,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1], pubkeys[2],
+				},
+			},
+			replyPath: replyPath,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1WithReplyPath,
+					},
+				},
+			},
+		},
+		{
+			name: "blinded hops included",
+			blindedPath: &sphinx.BlindedPath{
+				IntroductionPoint: pubkeys[0],
+				EncryptedData: [][]byte{
+					encryptedData0,
+				},
+				BlindedHops: []*btcec.PublicKey{
+					pubkeys[1],
+				},
+			},
+			extraHops: []*lnwire.BlindedHop{
+				{
+					BlindedNodeID: pubkeys[2],
+					EncryptedData: encryptedData1,
+				},
+			},
+			finalPayload: finalPayload,
+			expectedPath: &sphinx.PaymentPath{
+				{
+					NodePub: *pubkeys[1],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload0,
+					},
+				},
+				{
+					NodePub: *pubkeys[2],
+					HopPayload: sphinx.HopPayload{
+						Type:    sphinx.PayloadTLV,
+						Payload: payload1WithFinal,
+					},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			actualPath, err := blindedToSphinx(
+				testCase.blindedPath, testCase.extraHops,
+				testCase.replyPath, testCase.finalPayload,
+			)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedPath, actualPath)
+		})
+	}
+}
+
+// TestValidateRoutesRequest tests validation of requests for blinded route
+// creation.
+func TestValidateRoutesRequest(t *testing.T) {
+	privKeys := testutils.GetPrivkeys(t, 2)
+	pubKeys := testutils.GetPubkeys(t, 2)
+
+	tests := []struct {
+		name    string
+		request *BlindedRouteRequest
+		err     error
+	}{
+		{
+			name:    "no hops",
+			request: &BlindedRouteRequest{},
+			err:     ErrNoPath,
+		},
+		{
+			name: "no session key",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					privKeys[0].PubKey(),
+				},
+			},
+			err: ErrSessionKeyRequired,
+		},
+		{
+			name: "no blinding key",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					privKeys[0].PubKey(),
+				},
+				sessionKey: privKeys[0],
+			},
+			err: ErrBlindingKeyRequired,
+		},
+		{
+			name: "valid - no blinded",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					privKeys[0].PubKey(),
+				},
+				sessionKey:  privKeys[0],
+				blindingKey: privKeys[1],
+			},
+		},
+		{
+			name: "introduction node not last hop",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					pubKeys[0],
+					pubKeys[1],
+				},
+				blindedDestination: &lnwire.ReplyPath{
+					FirstNodeID: pubKeys[0],
+				},
+				sessionKey:  privKeys[0],
+				blindingKey: privKeys[1],
+			},
+			err: ErrNoIntroductionNode,
+		},
+		{
+			name: "valid - with blinded",
+			request: &BlindedRouteRequest{
+				hops: []*btcec.PublicKey{
+					pubKeys[0],
+					pubKeys[1],
+				},
+				blindedDestination: &lnwire.ReplyPath{
+					FirstNodeID: pubKeys[1],
+				},
+				sessionKey:  privKeys[0],
+				blindingKey: privKeys[1],
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.request.validate()
+			require.True(t, errors.Is(err, testCase.err))
+		})
+	}
+}
+
+// TestDirectToBlinded tests creation of paths that are directly to blinded
+// destinations, with no unblinded hops generated by our node.
+func TestDirectToBlinded(t *testing.T) {
+	privkeys := testutils.GetPrivkeys(t, 2)
+	pubkeys := testutils.GetPubkeys(t, 2)
+	tests := []struct {
+		name        string
+		blindedDest *lnwire.ReplyPath
+	}{
+		{
+			name: "valid path",
+			blindedDest: &lnwire.ReplyPath{
+				FirstNodeID:   pubkeys[0],
+				BlindingPoint: pubkeys[1],
+				Hops: []*lnwire.BlindedHop{
+					{
+						BlindedNodeID: pubkeys[0],
+						EncryptedData: []byte{1, 2, 3},
+					},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			sessionKey := privkeys[0]
+			blindingKey := privkeys[1]
+
+			req := NewBlindedRouteRequest(
+				sessionKey, blindingKey, []*btcec.PublicKey{
+					pubkeys[0],
+				}, nil, testCase.blindedDest, nil,
+			)
+
+			resp, err := directToBlinded(req)
+			require.NoError(t, err)
+
+			require.Equal(
+				t, resp.OnionMessage.BlindingPoint,
+				testCase.blindedDest.BlindingPoint,
+				"blinding point should be from dest",
+			)
 		})
 	}
 }

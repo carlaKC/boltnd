@@ -31,7 +31,7 @@ func (s *Server) GenerateBlindedRoute(ctx context.Context,
 		return nil, err
 	}
 
-	route, err := s.routeGenerator.BlindedRoute(ctx, features)
+	route, err := s.routeGenerator.ReplyPath(ctx, features)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
