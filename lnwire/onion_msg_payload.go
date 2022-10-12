@@ -32,9 +32,16 @@ const (
 	InvoiceNamespaceType tlv.Type = 66
 )
 
-// ErrNotFinalPayload is returned when a final hop payload is not within the
-// correct range.
-var ErrNotFinalPayload = errors.New("final hop payloads type should be >= 64")
+var (
+	// ErrNotFinalPayload is returned when a final hop payload is not
+	// within the correct range.
+	ErrNotFinalPayload = errors.New("final hop payloads type should be " +
+		">= 64")
+
+	// ErrNoHops is returned when we handle a reply path that does not
+	// have any hops (this makes no sense).
+	ErrNoHops = errors.New("reply path requires hops")
+)
 
 // OnionMessagePayload contains the contents of an onion message payload.
 type OnionMessagePayload struct {
@@ -257,8 +264,9 @@ func (r *ReplyPath) record() tlv.Record {
 
 // size returns the encoded size of our reply path.
 func (r *ReplyPath) size() uint64 {
-	// First node pubkey 33 + blinding point pubkey 33.
-	size := uint64(33 + 33)
+	// First node pubkey 33 + blinding point pubkey 33 + 1 byte for uint8
+	// for our hop count.
+	size := uint64(33 + 33 + 1)
 
 	// Add each hop's size to our total.
 	for _, hop := range r.Hops {
@@ -277,6 +285,15 @@ func encodeReplyPath(w io.Writer, val interface{}, buf *[8]byte) error {
 
 		if err := tlv.EPubKey(w, &p.BlindingPoint, buf); err != nil {
 			return fmt.Errorf("encode blinded path: %w", err)
+		}
+
+		hopCount := uint8(len(p.Hops))
+		if hopCount == 0 {
+			return ErrNoHops
+		}
+
+		if err := tlv.EUint8(w, &hopCount, buf); err != nil {
+			return fmt.Errorf("encode hop count: %w", err)
 		}
 
 		for i, hop := range p.Hops {
@@ -306,27 +323,22 @@ func decodeReplyPath(r io.Reader, val interface{}, buf *[8]byte,
 			return fmt.Errorf("decode blinding point:  %w", err)
 		}
 
-		// Track the number of bytes that we expect to have left in
-		// our record.
-		remainingBytes := l - 33 - 33
+		var hopCount uint8
+		if err := tlv.DUint8(r, &hopCount, buf, 1); err != nil {
+			return fmt.Errorf("decode hop count: %w", err)
+		}
 
-		// We expect the remainder of bytes in this message to contain
-		// blinded hops. Decode hops and add them to our path until
-		// we've read the full record. If we have a partial number of
-		// bytes left (ie, not enough to decode a full hop), we expect
-		// decodeBlindedHop to fail, so we don't need to check that we
-		// exactly hit 0 remaining bytes.
-		for remainingBytes > 0 {
+		if hopCount == 0 {
+			return ErrNoHops
+		}
+
+		for i := 0; i < int(hopCount); i++ {
 			hop := &BlindedHop{}
-			bytesRead, err := decodeBlindedHop(
-				r, hop, buf, uint64(remainingBytes),
-			)
-			if err != nil {
+			if err := decodeBlindedHop(r, hop, buf); err != nil {
 				return fmt.Errorf("decode hop: %w", err)
 			}
 
 			p.Hops = append(p.Hops, hop)
-			remainingBytes -= bytesRead
 		}
 
 		return nil
@@ -373,37 +385,27 @@ func encodeBlindedHop(w io.Writer, val interface{}, buf *[8]byte) error {
 	return tlv.NewTypeForEncodingErr(val, "*BlindedHop")
 }
 
-// decodeBlindedHop decodes a blinded hop tlv, returning the number of bytes
-// that it has read. This value can be used while decoding multiple variable
-// length hops to determine whether there are more hops left.
-func decodeBlindedHop(r io.Reader, val interface{}, buf *[8]byte,
-	l uint64) (uint64, error) {
-
-	// We know that our length should be _at least_ 33 bytes for a pubkey
-	// and 2 bytes for our data length. We allow exactly 32 bytes to
-	// handle the case where our data length is 0, and we don't have any
-	// encrypted data included.
-	if b, ok := val.(*BlindedHop); ok && l >= 35 {
+// decodeBlindedHop decodes a blinded hop tlv.
+func decodeBlindedHop(r io.Reader, val interface{}, buf *[8]byte) error {
+	if b, ok := val.(*BlindedHop); ok {
 		err := tlv.DPubKey(r, &b.BlindedNodeID, buf, 33)
 		if err != nil {
-			return 0, fmt.Errorf("decode blinded id: %w", err)
+			return fmt.Errorf("decode blinded id: %w", err)
 		}
 
 		var dataLen uint16
 		err = tlv.DUint16(r, &dataLen, buf, 2)
 		if err != nil {
-			return 0, fmt.Errorf("decode data len: %w", err)
+			return fmt.Errorf("decode data len: %w", err)
 		}
 
 		err = tlv.DVarBytes(r, &b.EncryptedData, buf, uint64(dataLen))
 		if err != nil {
-			return 0, fmt.Errorf("decode data: %w", err)
+			return fmt.Errorf("decode data: %w", err)
 		}
 
-		// Return the total number of bytes read from the buffer.
-		bytesRead := 33 + 2 + uint64(dataLen)
-		return bytesRead, nil
+		return nil
 	}
 
-	return 0, tlv.NewTypeForDecodingErr(val, "*BlindedHop", l, l)
+	return tlv.NewTypeForDecodingErr(val, "*BlindedHop", 0, 0)
 }

@@ -139,6 +139,7 @@ func TestReplyPathEncoding(t *testing.T) {
 
 	tests := []struct {
 		name    string
+		err     error
 		encoded *ReplyPath
 	}{
 		{
@@ -157,6 +158,7 @@ func TestReplyPathEncoding(t *testing.T) {
 				FirstNodeID:   pubkeys[0],
 				BlindingPoint: pubkeys[1],
 			},
+			err: ErrNoHops,
 		},
 		{
 			name: "hop without data",
@@ -176,7 +178,12 @@ func TestReplyPathEncoding(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			w := new(bytes.Buffer)
 			err := encodeReplyPath(w, testCase.encoded, &b)
-			require.NoError(t, err)
+			require.True(t, errors.Is(err, testCase.err))
+
+			// If we expect an error on encoding, just kill the test here.
+			if testCase.err != nil {
+				return
+			}
 
 			encodedBytes := w.Bytes()
 			encodedBytesLen := len(encodedBytes)
@@ -212,11 +219,10 @@ func TestBlindedHopEncoding(t *testing.T) {
 	require.NoError(t, err, "encode")
 
 	encodedBytes := w.Bytes()
-	encodedBytesLen := len(encodedBytes)
 
 	r := bytes.NewReader(encodedBytes)
 	decodedHop := &BlindedHop{}
-	_, err = decodeBlindedHop(r, decodedHop, &b, uint64(encodedBytesLen))
+	err = decodeBlindedHop(r, decodedHop, &b)
 	require.NoError(t, err, "decode")
 
 	require.Equal(t, encodedHop, decodedHop, "hops differ")
