@@ -506,6 +506,11 @@ func TestBlindedToSphinx(t *testing.T) {
 		replyPath = &lnwire.ReplyPath{
 			FirstNodeID:   pubkeys[0],
 			BlindingPoint: pubkeys[1],
+			Hops: []*lnwire.BlindedHop{
+				{
+					BlindedNodeID: pubkeys[2],
+				},
+			},
 		}
 
 		onion1WithReplyPath = &lnwire.OnionMessagePayload{
