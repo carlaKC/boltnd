@@ -3,9 +3,11 @@
 
 PKG := github.com/carlakc/boltnd
 ESCPKG := github.com\/carlakc\/boltnd
+LND_PKG := github.com/lightningnetwork/lnd
 
 XARGS := xargs -L 1
 
+GOBUILD := GO111MODULE=on go build -v
 GOTEST := go test
 GOACC_PKG := github.com/ory/go-acc
 LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
@@ -67,4 +69,14 @@ $(GOACC_BIN):
 $(LINT_BIN):
 	@$(call print, "Installing linter.")
 	go install -trimpath -tags=tools $(LINT_PKG)@$(LINT_VER)
+
+# ============
+# INSTALLATION
+# ============
+build-itest:
+	@$(call print, "Building itest binary")
+	CGO_ENABLED=0 $(GOTEST) -v ./itest -tags="itest" -c -o itest/itest.test
+
+	@$(call print, "Building itest lnd.")
+	CGO_ENABLED=0 $(GOBUILD) -o itest/lnd-itest $(LND_PKG)/cmd/lnd
 
