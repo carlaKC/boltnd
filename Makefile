@@ -4,6 +4,7 @@
 PKG := github.com/carlakc/boltnd
 ESCPKG := github.com\/carlakc\/boltnd
 LND_PKG := github.com/lightningnetwork/lnd
+BTCD_PKG := github.com/btcsuite/btcd
 
 XARGS := xargs -L 1
 
@@ -58,6 +59,13 @@ unit-cover: $(GOACC_BIN)
 	@$(call print, "Running unit coverage tests.")
 	$(GOACC_BIN) $(COVER_PKG) -- -tags="$(LOG_TAGS)"
 
+itest: build-itest itest-only
+
+itest-only:
+	@$(call print, "Running integration tests.")
+	rm -rf itest/logs; date
+	$(GOTEST) ./itest -v -tags="itest" -btcdexec=./btcd-itest -logdir=logs
+
 # ============
 # DEPENDENCIES
 # ============
@@ -74,9 +82,9 @@ $(LINT_BIN):
 # INSTALLATION
 # ============
 build-itest:
-	@$(call print, "Building itest binary")
-	CGO_ENABLED=0 $(GOTEST) -v ./itest -tags="itest" -c -o itest/itest.test
+	@$(call print, "Building itest btcd.")
+	CGO_ENABLED=0 $(GOBUILD) -tags="rpctest" -o itest/btcd-itest $(BTCD_PKG)
 
 	@$(call print, "Building itest lnd.")
-	CGO_ENABLED=0 $(GOBUILD) -o itest/lnd-itest $(LND_PKG)/cmd/lnd
+	CGO_ENABLED=0 $(GOBUILD) -tags="rpctest" -o itest/lnd-itest $(LND_PKG)/cmd/lnd
 

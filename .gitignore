@@ -39,3 +39,7 @@ coverage.txt
 
 # Itest binaries
 itest/lnd-itest
+itest/btcd-itest
+itest/logs
+itest/.backendlogs
+itest/.minerlogs
