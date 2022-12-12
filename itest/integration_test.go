@@ -20,7 +20,7 @@ var (
 func TestBoltnd(t *testing.T) {
 	// If no tests are registered, then we can exit early.
 	if len(testCases) == 0 {
-		t.Skip("integration tests not selected with flag 'rpctest'")
+		t.Skip("integration tests not selected with flag 'itest'")
 	}
 
 	// Parse testing flags that influence our test execution.
