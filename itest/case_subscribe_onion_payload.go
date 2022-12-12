@@ -7,7 +7,6 @@ import (
 
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/carlakc/boltnd/testutils"
-	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,9 +14,9 @@ import (
 
 // SubscribeOnionPayload tests subscriptions to specific tlv fields in our
 // onion payload.
-func SubscribeOnionPayload(t *testing.T, net *lntest.NetworkHarness) {
-	offersTest := setupForBolt12(t, net)
-	defer offersTest.cleanup()
+func SubscribeOnionPayload(t *testing.T, ht *harnessTest) {
+	net := ht.lndHarness
+	offersTest := ht.bolt12
 
 	var (
 		ctxb = context.Background()

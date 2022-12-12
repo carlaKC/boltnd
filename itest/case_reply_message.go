@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/carlakc/boltnd/offersrpc"
-	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 )
 
 // ReplyMessageTestCase tests sending of onion messages to reply paths.
-func ReplyMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
-	offersTest := setupForBolt12(t, net)
-	defer offersTest.cleanup()
+func ReplyMessageTestCase(t *testing.T, ht *harnessTest) {
+	net := ht.lndHarness
+	offersTest := ht.bolt12
 
 	ctxb := context.Background()
 

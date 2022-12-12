@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/carlakc/boltnd/offersrpc"
-	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 )
 
 // OnionMsgForwardTestCase tests forwarding of onion messages.
-func OnionMsgForwardTestCase(t *testing.T, net *lntest.NetworkHarness) {
-	offersTest := setupForBolt12(t, net)
-	defer offersTest.cleanup()
+func OnionMsgForwardTestCase(t *testing.T, ht *harnessTest) {
+	net := ht.lndHarness
+	offersTest := ht.bolt12
 
 	// Spin up a third node immediately because we will need a three-hop
 	// network for this test.

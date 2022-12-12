@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/carlakc/boltnd/offersrpc"
-	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,9 +28,8 @@ const (
 )
 
 // DecodeOfferTestCase tests decoding of offer strings.
-func DecodeOfferTestCase(t *testing.T, net *lntest.NetworkHarness) {
-	offersTest := setupForBolt12(t, net)
-	defer offersTest.cleanup()
+func DecodeOfferTestCase(t *testing.T, ht *harnessTest) {
+	offersTest := ht.bolt12
 
 	ctxb := context.Background()
 	ctxt, cancel := context.WithTimeout(ctxb, defaultTimeout)

@@ -9,14 +9,13 @@ import (
 	"github.com/carlakc/boltnd/lnwire"
 	"github.com/carlakc/boltnd/offersrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/stretchr/testify/require"
 )
 
 // OnionMessageTestCase tests the exchange of onion messages.
-func OnionMessageTestCase(t *testing.T, net *lntest.NetworkHarness) {
-	offersTest := setupForBolt12(t, net)
-	defer offersTest.cleanup()
+func OnionMessageTestCase(t *testing.T, ht *harnessTest) {
+	net := ht.lndHarness
+	offersTest := ht.bolt12
 
 	var (
 		ctxb = context.Background()
